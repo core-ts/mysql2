@@ -1,5 +1,5 @@
-import { Connection, createPool as createPool2, FieldPacket, format, OkPacket, Pool, PoolConnection, ResultSetHeader, RowDataPacket, } from 'mysql2';
-import { buildToSave, buildToSaveBatch, Metadata } from './build';
+import { Connection, createPool as createPool2, FieldPacket, format, OkPacket, Pool, PoolConnection, ResultSetHeader } from 'mysql2';
+import { buildToSave, buildToSaveBatch } from './build';
 import { Attribute, Attributes, Manager, Statement, StringMap } from './metadata';
 
 export * from './metadata';
@@ -25,11 +25,11 @@ export interface Config {
 export function createPool(conf: Config): Pool {
   if (conf.max && conf.max > 0 && !conf.connectionLimit) {
     conf.connectionLimit = conf.max;
-  } 
-  const pool = createPool2({...conf, rowsAsArray: true, multipleStatements: true});
+  }
+  const pool = createPool2({...conf, rowsAsArray: true});
   return pool;
 }
-/*
+
 // tslint:disable-next-line:max-classes-per-file
 export class PoolManager implements Manager {
   constructor(public pool: Pool) {
@@ -70,7 +70,6 @@ export class PoolManager implements Manager {
     return count(p, sql, args);
   }
 }
-*/
 export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
     return Promise.resolve(0);
@@ -127,7 +126,7 @@ export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: bo
                         }
                       });
                       let c = 0;
-                      c += results0.affectedRows + results.reduce((prev,item) => prev + item.affectedRows, 0);
+                      c += results0.affectedRows + results.reduce((prev, item) => prev + item.affectedRows, 0);
                       return resolve(c);
                     }
                   });
@@ -172,7 +171,7 @@ export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: bo
                     });
                   }
                 });
-                return resolve(results.reduce((prev,item) => prev + item.affectedRows, 0));
+                return resolve(results.reduce((prev, item) => prev + item.affectedRows, 0));
               }
             });
           }
@@ -208,13 +207,13 @@ export async function query<T>(pool: Pool | PoolConnection, sql: string, args?: 
       if (err) {
         return reject(err);
       } else {
-        if(results.length > 0) {
+        if (results.length > 0) {
           const arrayResult = results.map(item => {
             return formatData<T>(fields, item);
           });
           return resolve(handleResults(arrayResult, m, bools));
         } else {
-          resolve([])
+          resolve([]);
         }
       }
     });

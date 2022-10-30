@@ -1,6 +1,6 @@
 {
   "name": "mysql2-core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "mysql2-core",
   "main": "./lib/index.js",
   "types": "./src/index.ts",
