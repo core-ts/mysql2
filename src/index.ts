@@ -209,7 +209,11 @@ export async function query<T>(pool: Pool | PoolConnection, sql: string, args?: 
       } else {
         if (results.length > 0) {
           const arrayResult = results.map(item => {
-            return formatData<T>(fields, item);
+            if(Array.isArray(item)) {
+              return formatData<T>(fields, item);
+            } else {
+              return item
+            }
           });
           return resolve(handleResults(arrayResult, m, bools));
         } else {
