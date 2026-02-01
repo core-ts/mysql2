@@ -9,6 +9,7 @@
     "clean:lib": "rimraf lib"
   },
   "devDependencies": {
+    "mysql2": "^3.14.0",
     "tslint": "5.10.0",
     "typescript": "^3.3.3333"
   },
