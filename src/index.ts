@@ -1,4 +1,4 @@
-import { Connection, createPool as createPool2, FieldPacket, format, OkPacket, Pool, PoolConnection, ResultSetHeader } from "mysql2"
+import { Connection, createPool as createPool2, FieldPacket, format, Pool, PoolConnection, ResultSetHeader } from "mysql2"
 import { buildToSave, buildToSaveBatch } from "./build"
 import { Attribute, Attributes, Manager, Statement, StringMap } from "./metadata"
 
@@ -103,7 +103,7 @@ export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: bo
                 }
               }
             }
-            connection.query<ResultSetHeader>(query0, (er2a, results0) => {
+            connection.execute<ResultSetHeader>(query0, (er2a, results0) => {
               if (er2a) {
                 connection.rollback(() => {
                   return reject(er2a)
@@ -112,7 +112,7 @@ export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: bo
                 if (results0 && results0.affectedRows === 0) {
                   return 0
                 } else {
-                  connection.query<OkPacket[]>(queries.join(""), (er2, results) => {
+                  connection.execute<ResultSetHeader>(queries.join(""), (er2, results) => {
                     if (er2) {
                       connection.rollback(() => {
                         return reject(er2)
@@ -126,7 +126,7 @@ export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: bo
                         }
                       })
                       let c = 0
-                      c += results0.affectedRows + results.reduce((prev, item) => prev + item.affectedRows, 0)
+                      c += results0.affectedRows + results.affectedRows
                       return resolve(c)
                     }
                   })
@@ -157,7 +157,7 @@ export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: bo
                 queries.push(format(item.query + ";", toArray(item.params)))
               }
             })
-            connection.query<OkPacket[]>(queries.join(""), (er2, results) => {
+            connection.execute<ResultSetHeader>(queries.join(""), (er2, results) => {
               if (er2) {
                 connection.rollback(() => {
                   buildError(er2)
@@ -171,7 +171,7 @@ export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: bo
                     })
                   }
                 })
-                return resolve(results.reduce((prev, item) => prev + item.affectedRows, 0))
+                return resolve(results.affectedRows)
               }
             })
           }
@@ -187,7 +187,7 @@ function buildError(err: any): any {
   return err
 }
 
-export async function exec(pool: Pool, sql: string, args?: any[]): Promise<number> {
+export async function exec(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<number> {
   const p = toArray(args)
   return new Promise<number>((resolve, reject) => {
     return pool.execute<ResultSetHeader>(sql, p, (err, res) => {
@@ -224,12 +224,12 @@ export async function query<T>(pool: Pool | PoolConnection, sql: string, args?: 
   })
 }
 
-export function queryOne<T>(pool: Pool, sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T | null> {
+export function queryOne<T>(pool: Pool | PoolConnection, sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T | null> {
   return query<T>(pool, sql, args, m, bools).then((r) => {
     return r && r.length > 0 ? r[0] : null
   })
 }
-export function execScalar<T>(pool: Pool, sql: string, args?: any[]): Promise<T> {
+export function execScalar<T>(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<T> {
   return queryOne<T>(pool, sql, args).then((r) => {
     if (!r) {
       return null
@@ -240,12 +240,12 @@ export function execScalar<T>(pool: Pool, sql: string, args?: any[]): Promise<T>
   })
 }
 
-export function count(pool: Pool, sql: string, args?: any[]): Promise<number> {
+export function count(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<number> {
   return execScalar<number>(pool, sql, args)
 }
 
 export function save<T>(
-  pool: Pool | ((sql: string, args?: any[]) => Promise<number>),
+  pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>),
   obj: T,
   table: string,
   attrs: Attributes,
@@ -448,7 +448,7 @@ export function isEmpty(s: string): boolean {
 // tslint:disable-next-line:max-classes-per-file
 export class StringService {
   constructor(
-    protected pool: Pool,
+    protected pool: Pool | PoolConnection,
     public table: string,
     public column: string,
   ) {
@@ -487,13 +487,13 @@ export function version(attrs: Attributes): Attribute | undefined {
 }
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLWriter<T> {
-  pool?: Pool
+  pool?: Pool | PoolConnection
   version?: string
   exec?: (sql: string, args?: any[]) => Promise<number>
   map?: (v: T) => T
   param?: (i: number) => string
   constructor(
-    pool: Pool | ((sql: string, args?: any[]) => Promise<number>),
+    pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>),
     public table: string,
     public attributes: Attributes,
     public oneIfSuccess?: boolean,
