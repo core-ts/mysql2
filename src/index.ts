@@ -8,6 +8,7 @@ export * from "./metadata"
 // tslint:disable-next-line:class-name
 export class resource {
   static string?: boolean
+  static multipleStatements?: boolean
 }
 export interface Config {
   host?: string | undefined
@@ -47,11 +48,11 @@ export class PoolManager implements Manager {
   }
   execute(sql: string, args?: any[], ctx?: any): Promise<number> {
     const p = ctx ? ctx : this.pool
-    return exec(p, sql, args)
+    return execute(p, sql, args)
   }
   executeBatch(statements: Statement[], firstSuccess?: boolean, ctx?: any): Promise<number> {
     const p = ctx ? ctx : this.pool
-    return execBatch(p, statements, firstSuccess)
+    return executeBatch(p, statements, firstSuccess)
   }
   query<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[], ctx?: any): Promise<T[]> {
     const p = ctx ? ctx : this.pool
@@ -63,18 +64,18 @@ export class PoolManager implements Manager {
   }
   execScalar<T>(sql: string, args?: any[], ctx?: any): Promise<T> {
     const p = ctx ? ctx : this.pool
-    return execScalar<T>(p, sql, args)
+    return executeScalar<T>(p, sql, args)
   }
   count(sql: string, args?: any[], ctx?: any): Promise<number> {
     const p = ctx ? ctx : this.pool
     return count(p, sql, args)
   }
 }
-export function execBatch(pool: Pool, statements: Statement[], firstSuccess?: boolean): Promise<number> {
+export function executeBatch(pool: Pool, statements: Statement[], firstSuccess?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
     return Promise.resolve(0)
   } else if (statements.length === 1) {
-    return exec(pool, statements[0].query, statements[0].params)
+    return execute(pool, statements[0].query, statements[0].params)
   }
   if (firstSuccess) {
     return new Promise<number>((resolve, reject) => {
@@ -187,7 +188,7 @@ function buildError(err: any): any {
   return err
 }
 
-export async function exec(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<number> {
+export async function execute(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<number> {
   const p = toArray(args)
   return new Promise<number>((resolve, reject) => {
     return pool.execute<ResultSetHeader>(sql, p, (err, res) => {
@@ -229,7 +230,7 @@ export function queryOne<T>(pool: Pool | PoolConnection, sql: string, args?: any
     return r && r.length > 0 ? r[0] : null
   })
 }
-export function execScalar<T>(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<T> {
+export function executeScalar<T>(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<T> {
   return queryOne<T>(pool, sql, args).then((r) => {
     if (!r) {
       return null
@@ -241,7 +242,7 @@ export function execScalar<T>(pool: Pool | PoolConnection, sql: string, args?: a
 }
 
 export function count(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<number> {
-  return execScalar<number>(pool, sql, args)
+  return executeScalar<number>(pool, sql, args)
 }
 
 export function save<T>(
@@ -254,13 +255,13 @@ export function save<T>(
   i?: number,
 ): Promise<number> {
   const s = buildToSave(obj, table, attrs, ver, buildParam)
-  if (!s) {
+  if (!s.query) {
     return Promise.resolve(-1)
   }
   if (typeof pool === "function") {
     return pool(s.query, s.params)
   } else {
-    return exec(pool, s.query, s.params)
+    return execute(pool, s.query, s.params)
   }
 }
 export function saveBatch<T>(
@@ -275,7 +276,7 @@ export function saveBatch<T>(
   if (typeof pool === "function") {
     return pool(s)
   } else {
-    return execBatch(pool, s)
+    return executeBatch(pool, s)
   }
 }
 export function toArray(arr?: any[]): any[] {
@@ -470,7 +471,7 @@ export class StringService {
       arr.push("(?)")
     }
     const s = `insert ignore into ${this.table}(${this.column})values${arr.join(",")}`
-    return exec(this.pool, s, values)
+    return execute(this.pool, s, values)
   }
 }
 
@@ -489,7 +490,7 @@ export function version(attrs: Attributes): Attribute | undefined {
 export class MySQLWriter<T> {
   pool?: Pool | PoolConnection
   version?: string
-  exec?: (sql: string, args?: any[]) => Promise<number>
+  execute?: (sql: string, args?: any[]) => Promise<number>
   map?: (v: T) => T
   param?: (i: number) => string
   constructor(
@@ -502,7 +503,7 @@ export class MySQLWriter<T> {
   ) {
     this.write = this.write.bind(this)
     if (typeof pool === "function") {
-      this.exec = pool
+      this.execute = pool
     } else {
       this.pool = pool
     }
@@ -523,17 +524,17 @@ export class MySQLWriter<T> {
     }
     const stmt = buildToSave(obj2, this.table, this.attributes, this.version, this.param)
     if (stmt) {
-      if (this.exec) {
+      if (this.execute) {
         if (this.oneIfSuccess) {
-          return this.exec(stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
+          return this.execute(stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
         } else {
-          return this.exec(stmt.query, stmt.params)
+          return this.execute(stmt.query, stmt.params)
         }
       } else {
         if (this.oneIfSuccess) {
-          return exec(this.pool as any, stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
+          return execute(this.pool as any, stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
         } else {
-          return exec(this.pool as any, stmt.query, stmt.params)
+          return execute(this.pool as any, stmt.query, stmt.params)
         }
       }
     } else {
@@ -547,7 +548,7 @@ export class MySQLStreamWriter<T> {
   size = 0
   pool?: Pool
   version?: string
-  execBatch?: (statements: Statement[]) => Promise<number>
+  executeBatch?: (statements: Statement[]) => Promise<number>
   map?: (v: T) => T
   param?: (i: number) => string
   constructor(
@@ -561,7 +562,7 @@ export class MySQLStreamWriter<T> {
     this.write = this.write.bind(this)
     this.flush = this.flush.bind(this)
     if (typeof pool === "function") {
-      this.execBatch = pool
+      this.executeBatch = pool
     } else {
       this.pool = pool
     }
@@ -599,13 +600,13 @@ export class MySQLStreamWriter<T> {
       const total = this.list.length
       const stmt = buildToSaveBatch(this.list, this.table, this.attributes, this.version, this.param)
       if (stmt) {
-        if (this.execBatch) {
-          return this.execBatch(stmt).then((r) => {
+        if (this.executeBatch) {
+          return this.executeBatch(stmt).then((r) => {
             this.list = []
             return total
           })
         } else {
-          return execBatch(this.pool as any, stmt).then((r) => {
+          return executeBatch(this.pool as any, stmt).then((r) => {
             this.list = []
             return total
           })
@@ -666,9 +667,9 @@ export class MySQLBatchWriter<T> {
         }
       } else {
         if (this.oneIfSuccess) {
-          return execBatch(this.pool as any, stmts).then((ct) => stmts.length)
+          return executeBatch(this.pool as any, stmts).then((ct) => stmts.length)
         } else {
-          return execBatch(this.pool as any, stmts)
+          return executeBatch(this.pool as any, stmts)
         }
       }
     } else {
