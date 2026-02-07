@@ -1,4 +1,4 @@
-import { Connection, createPool as createPool2, FieldPacket, format, Pool, PoolConnection, ResultSetHeader } from "mysql2"
+import { Connection, createPool as createPool2, FieldPacket, Pool, PoolConnection, ResultSetHeader } from "mysql2"
 import { buildToSave, buildToSaveBatch } from "./build"
 import { Attribute, Attributes, Manager, Statement, StringMap } from "./metadata"
 
@@ -89,22 +89,23 @@ export function executeBatch(pool: Pool, statements: Statement[], firstSuccess?:
               return reject(er1)
             })
           } else {
-            let query0 = ""
             const queries: string[] = []
+            const params: any[] = []
             const l = statements.length
-            for (let j = 0; j < l; j++) {
+            for (let j = 1; j < l; j++) {
               const item = statements[j]
-              if (j === 0) {
-                query0 = format(item.query, toArray(item.params))
+              if (item.query.endsWith(";")) {
+                queries.push(item.query)
               } else {
-                if (item.query.endsWith(";")) {
-                  queries.push(format(item.query, toArray(item.params)))
-                } else {
-                  queries.push(format(item.query + ";", toArray(item.params)))
+                queries.push(item.query + ";")
+              }
+              if (item.params && item.params.length > 0) {
+                for (const p of item.params) {
+                  params.push(p)
                 }
               }
             }
-            connection.execute<ResultSetHeader>(query0, (er2a, results0) => {
+            connection.execute<ResultSetHeader>(statements[0].query, toArray(statements[0].params), (er2a, results0) => {
               if (er2a) {
                 connection.rollback(() => {
                   return reject(er2a)
@@ -113,7 +114,7 @@ export function executeBatch(pool: Pool, statements: Statement[], firstSuccess?:
                 if (results0 && results0.affectedRows === 0) {
                   return 0
                 } else {
-                  connection.execute<ResultSetHeader>(queries.join(""), (er2, results) => {
+                  connection.execute<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
                     if (er2) {
                       connection.rollback(() => {
                         return reject(er2)
@@ -151,14 +152,20 @@ export function executeBatch(pool: Pool, statements: Statement[], firstSuccess?:
             })
           } else {
             const queries: string[] = []
+            const params: any[] = []
             statements.forEach((item) => {
               if (item.query.endsWith(";")) {
-                queries.push(format(item.query, toArray(item.params)))
+                queries.push(item.query)
               } else {
-                queries.push(format(item.query + ";", toArray(item.params)))
+                queries.push(item.query + ";")
+              }
+              if (item.params && item.params.length > 0) {
+                for (const p of item.params) {
+                  params.push(p)
+                }
               }
             })
-            connection.execute<ResultSetHeader>(queries.join(""), (er2, results) => {
+            connection.execute<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
               if (er2) {
                 connection.rollback(() => {
                   buildError(er2)
