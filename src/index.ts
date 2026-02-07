@@ -34,8 +34,8 @@ export function createPool(conf: Config): Pool {
 export class PoolManager implements Manager {
   constructor(public pool: Pool) {
     this.param = this.param.bind(this)
-    this.exec = this.exec.bind(this)
-    this.execBatch = this.execBatch.bind(this)
+    this.execute = this.execute.bind(this)
+    this.executeBatch = this.executeBatch.bind(this)
     this.query = this.query.bind(this)
     this.queryOne = this.queryOne.bind(this)
     this.execScalar = this.execScalar.bind(this)
@@ -45,11 +45,11 @@ export class PoolManager implements Manager {
   param(i: number): string {
     return "?"
   }
-  exec(sql: string, args?: any[], ctx?: any): Promise<number> {
+  execute(sql: string, args?: any[], ctx?: any): Promise<number> {
     const p = ctx ? ctx : this.pool
     return exec(p, sql, args)
   }
-  execBatch(statements: Statement[], firstSuccess?: boolean, ctx?: any): Promise<number> {
+  executeBatch(statements: Statement[], firstSuccess?: boolean, ctx?: any): Promise<number> {
     const p = ctx ? ctx : this.pool
     return execBatch(p, statements, firstSuccess)
   }
