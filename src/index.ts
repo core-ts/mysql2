@@ -383,9 +383,7 @@ export function executeBatchConnection(connection: PoolConnection, statements: S
     return new Promise<number>((resolve, reject) => {
       connection.execute<ResultSetHeader>(statements[0].query, toArray(statements[0].params), (er2a, results0) => {
         if (er2a) {
-          connection.rollback(() => {
-            return reject(er2a)
-          })
+          return reject(er2a)
         } else {
           if (results0 && results0.affectedRows === 0) {
             return 0
@@ -408,17 +406,8 @@ export function executeBatchConnection(connection: PoolConnection, statements: S
             }
             connection.execute<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
               if (er2) {
-                connection.rollback(() => {
-                  return reject(er2)
-                })
+                return reject(er2)
               } else {
-                connection.commit((er3) => {
-                  if (er3) {
-                    connection.rollback(() => {
-                      return reject(er3)
-                    })
-                  }
-                })
                 let c = 0
                 c += results0.affectedRows + results.affectedRows
                 return resolve(c)
