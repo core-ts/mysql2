@@ -30,7 +30,56 @@ export function createPool(conf: Config): Pool {
   const pool = createPool2({ ...conf, rowsAsArray: true })
   return pool
 }
-
+export function getConnection(pool: Pool): Promise<PoolConnection> {
+  return new Promise<PoolConnection>((resolve, reject) => {
+    pool.getConnection((err, connection) => {
+      if (err) {
+        return reject(err)
+      }
+      return resolve(connection)
+    })
+  })
+}
+export function beginTransaction(connection: PoolConnection, rollbackIfError?: boolean): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    connection.beginTransaction((err) => {
+      if (err) {
+        if (!rollbackIfError) {
+          return reject(err)
+        }
+        connection.rollback(() => {
+          return reject(err)
+        })
+      }
+      return resolve()
+    })
+  })
+}
+export function commit(connection: PoolConnection, rollbackIfError?: boolean): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    connection.commit((err) => {
+      if (err) {
+        if (!rollbackIfError) {
+          return reject(err)
+        }
+        connection.rollback(() => {
+          return reject(err)
+        })
+      }
+      resolve()
+    })
+  })
+}
+export function rollback(connection: PoolConnection): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    connection.rollback((err) => {
+      if (err) {
+        return reject(err)
+      }
+      resolve()
+    })
+  })
+}
 // tslint:disable-next-line:max-classes-per-file
 export class PoolManager implements DB {
   constructor(protected pool: Pool) {
