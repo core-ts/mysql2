@@ -556,7 +556,6 @@ export function save<T>(
   attrs: Attributes,
   ver?: string,
   buildParam?: (i: number) => string,
-  i?: number,
 ): Promise<number> {
   const s = buildToSave(obj, table, attrs, ver, buildParam)
   if (!s.query) {
@@ -827,7 +826,7 @@ export class MySQLWriter<T> {
       obj2 = this.map(obj)
     }
     const stmt = buildToSave(obj2, this.table, this.attributes, this.version, this.param)
-    if (stmt) {
+    if (stmt.query) {
       if (this.execute) {
         if (this.oneIfSuccess) {
           return this.execute(stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
