@@ -902,7 +902,7 @@ export class MySQLStreamWriter<T> {
     } else {
       const total = this.list.length
       const stmt = buildToSaveBatch(this.list, this.table, this.attributes, this.version, this.param)
-      if (stmt) {
+      if (stmt.length > 0) {
         if (this.executeBatch) {
           return this.executeBatch(stmt).then((r) => {
             this.list = []
@@ -961,7 +961,7 @@ export class MySQLBatchWriter<T> {
       }
     }
     const stmts = buildToSaveBatch(list, this.table, this.attributes, this.version, this.param)
-    if (stmts && stmts.length > 0) {
+    if (stmts.length > 0) {
       if (this.execute) {
         if (this.oneIfSuccess) {
           return this.execute(stmts).then((ct) => stmts.length)
