@@ -204,128 +204,14 @@ export async function executeBatch(pool: Pool, statements: Statement[], firstSuc
   } else if (statements.length === 1) {
     return execute(pool, statements[0].query, statements[0].params)
   }
-  if (resource.multipleStatements) {
-    if (firstSuccess) {
-      return new Promise<number>((resolve, reject) => {
-        pool.getConnection((er0, connection) => {
-          if (er0) {
-            return reject(er0)
-          }
-          connection.beginTransaction((er1) => {
-            if (er1) {
-              connection.rollback(() => {
-                return reject(er1)
-              })
-            } else {
-              connection.execute<ResultSetHeader>(statements[0].query, toArray(statements[0].params), (er2a, results0) => {
-                if (er2a) {
-                  connection.rollback(() => {
-                    return reject(er2a)
-                  })
-                } else {
-                  if (results0 && results0.affectedRows === 0) {
-                    connection.commit((er3) => {
-                      if (er3) {
-                        connection.rollback(() => {
-                          return reject(er3)
-                        })
-                      }
-                    })
-                    return 0
-                  } else {
-                    const queries: string[] = []
-                    const params: any[] = []
-                    const l = statements.length
-                    for (let j = 1; j < l; j++) {
-                      const item = statements[j]
-                      if (item.query.endsWith(";")) {
-                        queries.push(item.query)
-                      } else {
-                        queries.push(item.query + ";")
-                      }
-                      if (item.params && item.params.length > 0) {
-                        for (const p of item.params) {
-                          params.push(p)
-                        }
-                      }
-                    }
-                    connection.query<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
-                      if (er2) {
-                        connection.rollback(() => {
-                          return reject(er2)
-                        })
-                      } else {
-                        connection.commit((er3) => {
-                          if (er3) {
-                            connection.rollback(() => {
-                              return reject(er3)
-                            })
-                          }
-                        })
-                        let c = 0
-                        c += results0.affectedRows + results.affectedRows
-                        return resolve(c)
-                      }
-                    })
-                  }
-                }
-              })
-            }
-          })
-        })
-      })
-    } else {
-      return new Promise<number>((resolve, reject) => {
-        pool.getConnection((er0, connection) => {
-          if (er0) {
-            return reject(er0)
-          }
-          connection.beginTransaction((er1) => {
-            if (er1) {
-              connection.rollback(() => {
-                return reject(er1)
-              })
-            } else {
-              const queries: string[] = []
-              const params: any[] = []
-              statements.forEach((item) => {
-                if (item.query.endsWith(";")) {
-                  queries.push(item.query)
-                } else {
-                  queries.push(item.query + ";")
-                }
-                if (item.params && item.params.length > 0) {
-                  for (const p of item.params) {
-                    params.push(p)
-                  }
-                }
-              })
-              connection.query<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
-                if (er2) {
-                  connection.rollback(() => {
-                    buildError(er2)
-                    return reject(er2)
-                  })
-                } else {
-                  connection.commit((er3) => {
-                    if (er3) {
-                      connection.rollback(() => {
-                        return reject(er3)
-                      })
-                    }
-                  })
-                  return resolve(results.affectedRows)
-                }
-              })
-            }
-          })
-        })
-      })
-    }
-  } else {
-    const connection = await getConnection(pool)
-    return executeBatchConnectionTx(connection, statements, firstSuccess)
-  }
+  return new Promise<number>((resolve, reject) => {
+    pool.getConnection((er0, connection) => {
+      if (er0) {
+        return reject(er0)
+      }
+      return executeBatchConnectionTx(connection, statements, firstSuccess)
+    })
+  })
 }
 export async function executeBatchConnectionTx(connection: PoolConnection, statements: Statement[], firstSuccess?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
