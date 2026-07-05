@@ -4,7 +4,7 @@ export function param(i: number): string {
   return "?"
 }
 export function params(length: number, from?: number): string[] {
-  if (from === undefined || from == null) {
+  if (from == null) {
     from = 0
   }
   const ps: string[] = []
@@ -80,7 +80,7 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: s
       pks.push(attr)
     }
     let v = o[k]
-    if (v === undefined || v == null) {
+    if (v == null) {
       v = attr.default
     }
     if (v !== undefined && v != null && !attr.ignored && !attr.noinsert) {
@@ -134,7 +134,7 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: s
         if (attr && !attr.key && !attr.ignored && !attr.noupdate) {
           const field = attr.column ? attr.column : k
           let x: string
-          if (v == null) {
+          if (v === null) {
             x = "null"
           } else if (v === "") {
             x = `''`
@@ -183,7 +183,7 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
     for (const k of ks) {
       const attr = attrs[k]
       let v = o[k]
-      if (v === undefined || v == null) {
+      if (v == null) {
         v = attr.default
       }
       if (v != null && v !== undefined && !attr.ignored && !attr.noinsert) {
@@ -229,7 +229,7 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
         if (attr && !attr.key && !attr.ignored && k !== ver && !attr.noupdate) {
           const field = attr.column ? attr.column : k
           let x: string
-          if (v == null) {
+          if (v === null) {
             x = "null"
           } else if (v === "") {
             x = `''`
