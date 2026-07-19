@@ -83,7 +83,7 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: s
     if (v == null) {
       v = attr.default
     }
-    if (v !== undefined && v != null && !attr.ignored && !attr.noinsert) {
+    if (v != null && !attr.ignored && !attr.noinsert) {
       const field = attr.column ? attr.column : k
       cols.push(field)
       if (k === ver) {
@@ -265,11 +265,9 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
   }
   return sts
 }
-const n = "NaN"
 export function toString(v: number): string {
-  let x = "" + v
-  if (x === n) {
-    x = "null"
+  if (v === v && v !== Infinity && v !== -Infinity) {
+    return "" + v
   }
-  return x
+  return "null"
 }
