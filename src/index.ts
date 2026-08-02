@@ -1,4 +1,5 @@
 import { Connection, createPool as createPool2, FieldPacket, Pool, PoolConnection, ResultSetHeader } from "mysql2"
+import { Pool as PromisePool } from "mysql2/promise"
 import { buildToSave, buildToSaveBatch } from "./build"
 import { Attribute, Attributes, DB, Statement, StringMap, Transaction } from "./metadata"
 
@@ -993,7 +994,7 @@ export interface HealthChecker {
 export class MySQLChecker implements HealthChecker {
   protected readonly service: string
   constructor(
-    protected readonly pool: Pool,
+    protected readonly pool: PromisePool,
     service?: string,
     protected readonly timeout = 4500,
   ) {
