@@ -93,10 +93,10 @@ without hiding SQL from developers.
                Executor Interface
                        │
                        ▼
-               MySQL Adapter
+                 MySQL Adapter
         ┌──────────────┼──────────────┐
         ▼              ▼              ▼
-    Connection     Transaction     Stream
+    Connection     Transaction      Stream
         │              │              │
         └──────────────┼──────────────┘
                        ▼
@@ -146,15 +146,8 @@ const db = new MySQLDB({
 
 ```ts
 const users = await db.query<User>(
-
-    `
-    SELECT *
-    FROM users
-    WHERE age > ?
-    `,
-
+    `SELECT * FROM users WHERE age > ?`,
     [18]
-
 )
 ```
 
@@ -164,15 +157,8 @@ const users = await db.query<User>(
 
 ```ts
 await db.execute(
-
-    `
-    UPDATE users
-    SET active = ?
-    WHERE id = ?
-    `,
-
+    `UPDATE users SET active = ? WHERE id = ?`
     [true, 10]
-
 )
 ```
 
@@ -184,25 +170,14 @@ await db.execute(
 const tx = await db.beginTransaction()
 
 try {
-
     await tx.execute(
-
-        `
-        INSERT INTO users(name)
-        VALUES(?)
-        `,
-
+        `INSERT INTO users(name) VALUES(?)`,
         ["John"]
-
     )
-
     await tx.commit()
-
 }
 catch (err) {
-
     await tx.rollback()
-
 }
 ```
 
@@ -212,27 +187,14 @@ catch (err) {
 
 ```ts
 await db.executeBatch([
-
     {
-
-        query:
-            "INSERT INTO users(name) VALUES(?)",
-
-        params:
-            ["John"]
-
+        query: "INSERT INTO users(name) VALUES(?)",
+        params: ["John"]
     },
-
     {
-
-        query:
-            "INSERT INTO users(name) VALUES(?)",
-
-        params:
-            ["Jane"]
-
+        query: "INSERT INTO users(name) VALUES(?)",
+        params: ["Jane"]
     }
-
 ])
 ```
 
@@ -244,17 +206,11 @@ Stream large result sets without loading everything into memory.
 
 ```ts
 await db.stream(
-
     "SELECT * FROM users",
-
     [],
-
     async user => {
-
         console.log(user)
-
     }
-
 )
 ```
 
@@ -307,14 +263,8 @@ Export query results without loading everything into memory.
 
 ```ts
 await exporter.export(
-
-    `
-    SELECT *
-    FROM users
-    `,
-
+    `SELECT * FROM users`,
     "users.csv"
-
 )
 ```
 
@@ -378,31 +328,31 @@ Perfect for
 Designed to work seamlessly with **SQL Repository**.
 
 ```
-Application
+ Application
 
-        │
+      │
 
-        ▼
+      ▼
 
 SqlRepository
 
-        │
+      │
 
-        ▼
+      ▼
 
-Executor
+  Executor
 
-        │
+      │
 
-        ▼
+      ▼
 
 MySQL Adapter
 
-        │
+      │
 
-        ▼
+      ▼
 
-mysql2
+   mysql2
 ```
 
 The repository layer never depends directly on mysql2.
@@ -414,19 +364,19 @@ The repository layer never depends directly on mysql2.
 Internally the adapter manages a connection pool.
 
 ```
-Application
+ Application
 
-        │
+      │
 
-        ▼
+      ▼
 
 Pool Manager
 
-        │
+      │
 
-        ▼
+      ▼
 
-mysql2 Pool
+ mysql2 Pool
 ```
 
 Connection reuse improves performance.
@@ -436,25 +386,25 @@ Connection reuse improves performance.
 # Transaction Model
 
 ```
-Application
+ Application
 
-        │
+      │
 
-        ▼
+      ▼
 
-Transaction
+ Transaction
 
-        │
+      │
 
-        ▼
+      ▼
 
 PoolConnection
 
-        │
+      │
 
-        ▼
+      ▼
 
-mysql2
+   mysql2
 ```
 
 Transactions are isolated from application code.
@@ -595,14 +545,14 @@ Together they provide a lightweight, SQL-first data access framework.
 
 ---
 
-# License
-
-MIT License
-
----
-
 # Contributing
 
 Contributions are welcome!
 
 Feel free to submit issues, feature requests, or pull requests to improve the project.
+
+---
+
+# License
+
+MIT License

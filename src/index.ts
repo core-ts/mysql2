@@ -985,61 +985,71 @@ export interface AnyMap {
   [key: string]: any
 }
 // tslint:disable-next-line:max-classes-per-file
-export class MySQLChecker {
-  timeout: number
-  service: string
+export interface HealthChecker {
+  name(): string
+  build(data: AnyMap, error: any): AnyMap
+  check(): Promise<AnyMap>
+}
+export class MySQLChecker implements HealthChecker {
+  protected readonly service: string
   constructor(
-    private pool: Pool,
+    protected readonly pool: Pool,
     service?: string,
-    timeout?: number,
+    protected readonly timeout = 4500,
   ) {
-    this.timeout = timeout ? timeout : 4200
-    this.service = service ? service : "mysql"
-    this.check = this.check.bind(this)
-    this.name = this.name.bind(this)
-    this.build = this.build.bind(this)
+    this.service = service || "mysql"
   }
-  async check(): Promise<AnyMap> {
-    const obj = {} as AnyMap
-    const promise = new Promise<any>((resolve, reject) => {
-      this.pool.query("select current_time", (err, result) => {
-        if (err) {
-          return reject(err)
-        } else {
-          resolve(obj)
-        }
-      })
-    })
-    if (this.timeout > 0) {
-      return promiseTimeOut(this.timeout, promise)
-    } else {
-      return promise
-    }
-  }
+
   name(): string {
     return this.service
   }
-  build(data: AnyMap, err: any): AnyMap {
-    if (err) {
-      if (!data) {
-        data = {} as AnyMap
-      }
-      data["error"] = err
+
+  build(data: AnyMap, error: any): AnyMap {
+    return {
+      name: this.name(),
+      healthy: error == null,
+      timestamp: new Date().toISOString(),
+      ...data,
+      ...(error && {
+        error: {
+          message: error.message,
+          code: error.code,
+        },
+      }),
     }
-    return data
+  }
+
+  async check(): Promise<AnyMap> {
+    const started = Date.now()
+    try {
+      await Promise.race([this.pool.query("SELECT 1"), this.timeoutPromise()])
+      return this.build(
+        {
+          latency: Date.now() - started,
+        },
+        null,
+      )
+    } catch (err) {
+      return this.build(
+        {
+          latency: Date.now() - started,
+        },
+        err,
+      )
+    }
+  }
+
+  private timeoutPromise(): Promise<never> {
+    return new Promise((_, reject) =>
+      setTimeout(() => {
+        const error: any = new Error("Health check timeout")
+        error.code = "TIMEOUT"
+        reject(error)
+      }, this.timeout),
+    )
   }
 }
 
-function promiseTimeOut(timeoutInMilliseconds: number, promise: Promise<any>): Promise<any> {
-  return Promise.race([
-    promise,
-    new Promise((resolve, reject) => {
-      setTimeout(() => {
-        reject(`Timed out in: ${timeoutInMilliseconds} milliseconds!`)
-      }, timeoutInMilliseconds)
-    }),
-  ])
-}
 export interface Formatter<T> {
   format: (row: T) => string
 }
