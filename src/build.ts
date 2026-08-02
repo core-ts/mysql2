@@ -186,7 +186,7 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
       if (v == null) {
         v = attr.default
       }
-      if (v != null && v !== undefined && !attr.ignored && !attr.noinsert) {
+      if (v != null && !attr.ignored && !attr.noinsert) {
         const field = attr.column ? attr.column : k
         cols.push(field)
         if (k === ver) {
