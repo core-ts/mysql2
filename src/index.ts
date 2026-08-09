@@ -1,6 +1,6 @@
 import { Connection, createPool as createPool2, FieldPacket, Pool, PoolConnection, ResultSetHeader } from "mysql2"
 import { Pool as PromisePool } from "mysql2/promise"
-import { buildToSave, buildToSaveBatch } from "./build"
+import { buildToSave, buildToSaveBatch, param } from "./build"
 import { Attribute, Attributes, DB, Statement, StringMap, Transaction } from "./metadata"
 
 export * from "./build"
@@ -660,27 +660,18 @@ export function version(attrs: Attributes): Attribute | undefined {
 }
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLWriter<T> {
-  pool?: Pool | PoolConnection
-  version?: string
-  execute?: (sql: string, args?: any[]) => Promise<number>
-  map?: (v: T) => T
-  param?: (i: number) => string
+  protected version?: string
+  protected param?: (i: number) => string
   constructor(
-    pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>),
-    public table: string,
-    public attributes: Attributes,
-    public oneIfSuccess?: boolean,
-    toDB?: (v: T) => T,
+    protected pool: Pool | PoolConnection,
+    protected table: string,
+    protected attributes: Attributes,
+    protected oneIfSuccess?: boolean,
+    protected map?: (v: T) => T,
     buildParam?: (i: number) => string,
   ) {
     this.write = this.write.bind(this)
-    if (typeof pool === "function") {
-      this.execute = pool
-    } else {
-      this.pool = pool
-    }
-    this.param = buildParam
-    this.map = toDB
+    this.param = buildParam ? buildParam : param
     const x = version(attributes)
     if (x) {
       this.version = x.name
@@ -696,18 +687,10 @@ export class MySQLWriter<T> {
     }
     const stmt = buildToSave(obj2, this.table, this.attributes, this.version, this.param)
     if (stmt.query) {
-      if (this.execute) {
-        if (this.oneIfSuccess) {
-          return this.execute(stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
-        } else {
-          return this.execute(stmt.query, stmt.params)
-        }
+      if (this.oneIfSuccess) {
+        return execute(this.pool, stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
       } else {
-        if (this.oneIfSuccess) {
-          return execute(this.pool as any, stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
-        } else {
-          return execute(this.pool as any, stmt.query, stmt.params)
-        }
+        return execute(this.pool, stmt.query, stmt.params)
       }
     } else {
       return Promise.resolve(0)
@@ -716,36 +699,23 @@ export class MySQLWriter<T> {
 }
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLStreamWriter<T> {
-  list: T[] = []
-  size = 0
-  pool?: Pool
-  version?: string
-  executeBatch?: (statements: Statement[]) => Promise<number>
-  map?: (v: T) => T
-  param?: (i: number) => string
+  protected list: T[] = []
+  protected version?: string
+  protected param?: (i: number) => string
   constructor(
-    pool: Pool | ((statements: Statement[]) => Promise<number>),
-    public table: string,
-    public attributes: Attributes,
-    size?: number,
-    toDB?: (v: T) => T,
+    protected pool: Pool,
+    protected table: string,
+    protected attributes: Attributes,
+    protected size: number = 1000,
+    protected map?: (v: T) => T,
     buildParam?: (i: number) => string,
   ) {
     this.write = this.write.bind(this)
     this.flush = this.flush.bind(this)
-    if (typeof pool === "function") {
-      this.executeBatch = pool
-    } else {
-      this.pool = pool
-    }
-    this.param = buildParam
-    this.map = toDB
+    this.param = buildParam ? buildParam : param
     const x = version(attributes)
     if (x) {
       this.version = x.name
-    }
-    if (size) {
-      this.size = size
     }
   }
   write(obj: T): Promise<number> {
@@ -772,17 +742,10 @@ export class MySQLStreamWriter<T> {
       const total = this.list.length
       const stmt = buildToSaveBatch(this.list, this.table, this.attributes, this.version, this.param)
       if (stmt.length > 0) {
-        if (this.executeBatch) {
-          return this.executeBatch(stmt).then((r) => {
-            this.list = []
-            return total
-          })
-        } else {
-          return executeBatch(this.pool as any, stmt).then((r) => {
-            this.list = []
-            return total
-          })
-        }
+        return executeBatch(this.pool as any, stmt).then((r) => {
+          this.list = []
+          return total
+        })
       } else {
         return Promise.resolve(0)
       }
@@ -791,27 +754,18 @@ export class MySQLStreamWriter<T> {
 }
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLBatchWriter<T> {
-  pool?: Pool
-  version?: string
-  execute?: (statements: Statement[]) => Promise<number>
-  map?: (v: T) => T
-  param?: (i: number) => string
+  protected version?: string
+  protected param?: (i: number) => string
   constructor(
-    pool: Pool | ((statements: Statement[]) => Promise<number>),
-    public table: string,
-    public attributes: Attributes,
-    public oneIfSuccess?: boolean,
-    toDB?: (v: T) => T,
+    protected pool: Pool,
+    protected table: string,
+    protected attributes: Attributes,
+    protected oneIfSuccess?: boolean,
+    protected map?: (v: T) => T,
     buildParam?: (i: number) => string,
   ) {
     this.write = this.write.bind(this)
-    if (typeof pool === "function") {
-      this.execute = pool
-    } else {
-      this.pool = pool
-    }
-    this.param = buildParam
-    this.map = toDB
+    this.param = buildParam ? buildParam : param
     const x = version(attributes)
     if (x) {
       this.version = x.name
@@ -831,18 +785,10 @@ export class MySQLBatchWriter<T> {
     }
     const stmts = buildToSaveBatch(list, this.table, this.attributes, this.version, this.param)
     if (stmts.length > 0) {
-      if (this.execute) {
-        if (this.oneIfSuccess) {
-          return this.execute(stmts).then((ct) => stmts.length)
-        } else {
-          return this.execute(stmts)
-        }
+      if (this.oneIfSuccess) {
+        return executeBatch(this.pool, stmts).then((ct) => stmts.length)
       } else {
-        if (this.oneIfSuccess) {
-          return executeBatch(this.pool as any, stmts).then((ct) => stmts.length)
-        } else {
-          return executeBatch(this.pool as any, stmts)
-        }
+        return executeBatch(this.pool, stmts)
       }
     } else {
       return Promise.resolve(0)
