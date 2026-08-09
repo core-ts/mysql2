@@ -28,8 +28,7 @@ export function createPool(conf: Config): Pool {
   if (conf.max && conf.max > 0 && !conf.connectionLimit) {
     conf.connectionLimit = conf.max
   }
-  const pool = createPool2({ ...conf, rowsAsArray: true })
-  return pool
+  return createPool2({ ...conf, rowsAsArray: true })
 }
 export function getConnection(pool: Pool): Promise<PoolConnection> {
   return new Promise<PoolConnection>((resolve, reject) => {
@@ -48,7 +47,7 @@ export function beginTransaction(connection: PoolConnection, rollbackIfError?: b
         if (!rollbackIfError) {
           return reject(err)
         }
-        connection.rollback(() => {
+        return connection.rollback(() => {
           return reject(err)
         })
       }
@@ -63,11 +62,11 @@ export function commit(connection: PoolConnection, rollbackIfError?: boolean): P
         if (!rollbackIfError) {
           return reject(err)
         }
-        connection.rollback(() => {
+        return connection.rollback(() => {
           return reject(err)
         })
       }
-      resolve()
+      return resolve()
     })
   })
 }
@@ -77,7 +76,7 @@ export function rollback(connection: PoolConnection): Promise<void> {
       if (err) {
         return reject(err)
       }
-      resolve()
+      return resolve()
     })
   })
 }
@@ -98,18 +97,18 @@ export class PoolManager implements DB {
   }
   beginTransaction(): Promise<Transaction> {
     return new Promise<Transaction>((resolve, reject) => {
-      this.pool.getConnection((er0, connection) => {
-        if (er0) {
-          return reject(er0)
+      this.pool.getConnection((err, connection) => {
+        if (err) {
+          return reject(err)
         }
-        connection.beginTransaction((er1) => {
-          if (er1) {
-            connection.rollback(() => {
-              return reject(er1)
+        connection.beginTransaction((beginError) => {
+          if (beginError) {
+            return connection.rollback(() => {
+              connection.release()
+              return reject(beginError)
             })
           }
-          const tx = new PoolConnectionManager(connection)
-          return resolve(tx)
+          return resolve(new PoolConnectionManager(connection))
         })
       })
     })
@@ -141,6 +140,7 @@ export class PoolManager implements DB {
 }
 // tslint:disable-next-line:max-classes-per-file
 export class PoolConnectionManager implements Transaction {
+  protected released = false
   constructor(protected connection: PoolConnection) {
     this.param = this.param.bind(this)
     this.execute = this.execute.bind(this)
@@ -156,23 +156,35 @@ export class PoolConnectionManager implements Transaction {
   }
   commit(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      this.connection.commit((er3) => {
-        if (er3) {
-          return reject(er3)
+      this.connection.commit((err) => {
+        if (err) {
+          return this.connection.rollback(() => {
+            this.release()
+            return reject(err)
+          })
         }
+        this.release()
         return resolve()
       })
     })
   }
   rollback(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      this.connection.rollback((er3) => {
-        if (er3) {
-          return reject(er3)
+      this.connection.rollback((err) => {
+        this.release()
+        if (err) {
+          return reject(err)
         }
         return resolve()
       })
     })
+  }
+  protected release(): void {
+    if (this.released) {
+      return
+    }
+    this.released = true
+    this.connection.release()
   }
   execute(sql: string, args?: any[], ctx?: any): Promise<number> {
     const p = ctx ? ctx : this.connection
@@ -201,290 +213,169 @@ export class PoolConnectionManager implements Transaction {
 }
 export async function executeBatch(pool: Pool, statements: Statement[], firstSuccess?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
-    return Promise.resolve(0)
-  } else if (statements.length === 1) {
+    return 0
+  }
+  if (statements.length === 1) {
     return execute(pool, statements[0].query, statements[0].params)
   }
-  return new Promise<number>((resolve, reject) => {
-    pool.getConnection((er0, connection) => {
-      if (er0) {
-        return reject(er0)
-      }
-      return executeBatchConnectionTx(connection, statements, firstSuccess)
-    })
-  })
+  const connection = await getConnection(pool)
+  try {
+    return await executeBatchConnectionTx(connection, statements, firstSuccess)
+  } finally {
+    connection.release()
+  }
 }
 export async function executeBatchConnectionTx(connection: PoolConnection, statements: Statement[], firstSuccess?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
-    return Promise.resolve(0)
-  } else if (statements.length === 1) {
+    return 0
+  }
+  if (statements.length === 1) {
     return execute(connection, statements[0].query, statements[0].params)
   }
-  if (resource.multipleStatements) {
-    if (firstSuccess) {
-      return new Promise<number>((resolve, reject) => {
-        connection.beginTransaction((er1) => {
-          if (er1) {
-            connection.rollback(() => {
-              return reject(er1)
-            })
-          } else {
-            connection.execute<ResultSetHeader>(statements[0].query, toArray(statements[0].params), (er2a, results0) => {
-              if (er2a) {
-                connection.rollback(() => {
-                  return reject(er2a)
-                })
-              } else {
-                if (results0 && results0.affectedRows === 0) {
-                  connection.commit((er3) => {
-                    if (er3) {
-                      connection.rollback(() => {
-                        return reject(er3)
-                      })
-                    }
-                  })
-                  return 0
-                } else {
-                  const queries: string[] = []
-                  const params: any[] = []
-                  const l = statements.length
-                  for (let j = 1; j < l; j++) {
-                    const item = statements[j]
-                    if (item.query.endsWith(";")) {
-                      queries.push(item.query)
-                    } else {
-                      queries.push(item.query + ";")
-                    }
-                    if (item.params && item.params.length > 0) {
-                      for (const p of item.params) {
-                        params.push(p)
-                      }
-                    }
-                  }
-                  connection.query<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
-                    if (er2) {
-                      connection.rollback(() => {
-                        return reject(er2)
-                      })
-                    } else {
-                      connection.commit((er3) => {
-                        if (er3) {
-                          connection.rollback(() => {
-                            return reject(er3)
-                          })
-                        }
-                      })
-                      let c = 0
-                      c += results0.affectedRows + results.affectedRows
-                      return resolve(c)
-                    }
-                  })
-                }
-              }
-            })
-          }
-        })
-      })
-    } else {
-      return new Promise<number>((resolve, reject) => {
-        connection.beginTransaction((er1) => {
-          if (er1) {
-            connection.rollback(() => {
-              return reject(er1)
-            })
-          } else {
-            const queries: string[] = []
-            const params: any[] = []
-            statements.forEach((item) => {
-              if (item.query.endsWith(";")) {
-                queries.push(item.query)
-              } else {
-                queries.push(item.query + ";")
-              }
-              if (item.params && item.params.length > 0) {
-                for (const p of item.params) {
-                  params.push(p)
-                }
-              }
-            })
-            connection.query<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
-              if (er2) {
-                connection.rollback(() => {
-                  buildError(er2)
-                  return reject(er2)
-                })
-              } else {
-                connection.commit((er3) => {
-                  if (er3) {
-                    connection.rollback(() => {
-                      return reject(er3)
-                    })
-                  }
-                })
-                return resolve(results.affectedRows)
-              }
-            })
-          }
-        })
-      })
-    }
-  } else {
-    if (firstSuccess) {
-      try {
-        await beginTransaction(connection, true)
-        let count = await execute(connection, statements[0].query, toArray(statements[0].params))
-        if (count === 0) {
-          commit(connection, true)
+  await beginTransaction(connection, true)
+  try {
+    let count = 0
+
+    if (resource.multipleStatements) {
+      if (firstSuccess) {
+        const firstCount = await execute(connection, statements[0].query, statements[0].params)
+
+        count = firstCount
+
+        if (firstCount === 0) {
+          await commit(connection, true)
           return 0
         }
-        const l = statements.length
-
-        for (let j = 1; j < l; j++) {
-          const item = statements[j]
-          const c = await execute(connection, item.query, toArray(item.params))
-          count = count + c
-        }
-        commit(connection, true)
-        return count
-      } catch (err) {
-        rollback(connection)
-        throw err
+        const remaining = statements.slice(1)
+        count += await executeMultipleStatements(connection, remaining)
+      } else {
+        count = await executeMultipleStatements(connection, statements)
       }
     } else {
-      try {
-        await beginTransaction(connection, true)
-        let count = 0
-        const l = statements.length
-        for (let j = 0; j < l; j++) {
-          const item = statements[j]
-          const c = await execute(connection, item.query, toArray(item.params))
-          count = count + c
+      const start = firstSuccess ? 1 : 0
+      if (firstSuccess) {
+        const firstCount = await execute(connection, statements[0].query, statements[0].params)
+        count = firstCount
+        if (firstCount === 0) {
+          await commit(connection, true)
+          return 0
         }
-        commit(connection, true)
-        return count
-      } catch (err) {
-        rollback(connection)
-        throw err
+      }
+      for (let i = start; i < statements.length; i++) {
+        const item = statements[i]
+        count += await execute(connection, item.query, item.params)
       }
     }
+
+    await commit(connection, true)
+
+    return count
+  } catch (err) {
+    try {
+      await rollback(connection)
+    } catch {
+      // Preserve the original error.
+    }
+
+    throw buildError(err)
   }
 }
+
 export async function executeBatchConnection(connection: PoolConnection, statements: Statement[], firstSuccess?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
-    return Promise.resolve(0)
-  } else if (statements.length === 1) {
+    return 0
+  }
+
+  if (statements.length === 1) {
     return execute(connection, statements[0].query, statements[0].params)
   }
+
   if (resource.multipleStatements) {
     if (firstSuccess) {
-      return new Promise<number>((resolve, reject) => {
-        connection.execute<ResultSetHeader>(statements[0].query, toArray(statements[0].params), (er2a, results0) => {
-          if (er2a) {
-            return reject(er2a)
-          } else {
-            if (results0 && results0.affectedRows === 0) {
-              return 0
-            } else {
-              const queries: string[] = []
-              const params: any[] = []
-              const l = statements.length
-              for (let j = 1; j < l; j++) {
-                const item = statements[j]
-                if (item.query.endsWith(";")) {
-                  queries.push(item.query)
-                } else {
-                  queries.push(item.query + ";")
-                }
-                if (item.params && item.params.length > 0) {
-                  for (const p of item.params) {
-                    params.push(p)
-                  }
-                }
-              }
-              connection.query<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
-                if (er2) {
-                  return reject(er2)
-                } else {
-                  let c = 0
-                  c += results0.affectedRows + results.affectedRows
-                  return resolve(c)
-                }
-              })
-            }
-          }
-        })
-      })
-    } else {
-      return new Promise<number>((resolve, reject) => {
-        const queries: string[] = []
-        const params: any[] = []
-        statements.forEach((item) => {
-          if (item.query.endsWith(";")) {
-            queries.push(item.query)
-          } else {
-            queries.push(item.query + ";")
-          }
-          if (item.params && item.params.length > 0) {
-            for (const p of item.params) {
-              params.push(p)
-            }
-          }
-        })
-        connection.query<ResultSetHeader>(queries.join(""), toArray(params), (er2, results) => {
-          if (er2) {
-            connection.rollback(() => {
-              buildError(er2)
-              return reject(er2)
-            })
-          } else {
-            connection.commit((er3) => {
-              if (er3) {
-                connection.rollback(() => {
-                  return reject(er3)
-                })
-              }
-            })
-            return resolve(results.affectedRows)
-          }
-        })
-      })
+      const firstCount = await execute(connection, statements[0].query, statements[0].params)
+
+      if (firstCount === 0) {
+        return 0
+      }
+
+      return firstCount + (await executeMultipleStatements(connection, statements.slice(1)))
     }
-  } else {
-    if (firstSuccess) {
-      try {
-        let count = await execute(connection, statements[0].query, toArray(statements[0].params))
-        if (count === 0) {
-          return 0
-        }
-        const l = statements.length
-        try {
-          for (let j = 1; j < l; j++) {
-            const item = statements[j]
-            const c = await execute(connection, item.query, toArray(item.params))
-            count = count + c
-          }
-          return count
-        } catch (er1) {
-          throw er1
-        }
-      } catch (er0) {
-        throw er0
-      }
-    } else {
-      let count = 0
-      const l = statements.length
-      try {
-        for (let j = 0; j < l; j++) {
-          const item = statements[j]
-          const c = await execute(connection, item.query, toArray(item.params))
-          count = count + c
-        }
-        return count
-      } catch (err) {
-        throw err
-      }
+
+    return executeMultipleStatements(connection, statements)
+  }
+
+  let count = 0
+  const start = firstSuccess ? 1 : 0
+
+  if (firstSuccess) {
+    const firstCount = await execute(connection, statements[0].query, statements[0].params)
+
+    count = firstCount
+
+    if (firstCount === 0) {
+      return 0
     }
   }
+
+  for (let i = start; i < statements.length; i++) {
+    const item = statements[i]
+
+    count += await execute(connection, item.query, item.params)
+  }
+
+  return count
+}
+
+async function executeMultipleStatements(connection: PoolConnection, statements: Statement[]): Promise<number> {
+  if (!statements || statements.length === 0) {
+    return 0
+  }
+
+  const queries: string[] = []
+  const params: any[] = []
+
+  for (const item of statements) {
+    queries.push(ensureSemicolon(item.query))
+
+    if (item.params && item.params.length > 0) {
+      params.push(...item.params)
+    }
+  }
+
+  return new Promise<number>((resolve, reject) => {
+    connection.query<any>(queries.join(""), toArray(params), (err, results) => {
+      if (err) {
+        buildError(err)
+        return reject(err)
+      }
+
+      return resolve(getAffectedRows(results))
+    })
+  })
+}
+function ensureSemicolon(sql: string): string {
+  return sql.endsWith(";") ? sql : `${sql};`
+}
+function getAffectedRows(results: any): number {
+  if (!results) {
+    return 0
+  }
+
+  if (Array.isArray(results)) {
+    let count = 0
+
+    for (const result of results) {
+      if (result && typeof result.affectedRows === "number") {
+        count += result.affectedRows
+      }
+    }
+
+    return count
+  }
+  if (typeof results.affectedRows === "number") {
+    return results.affectedRows
+  }
+  return 0
 }
 function buildError(err: any): any {
   if (err.errno === 1062 && err.code === "ER_DUP_ENTRY") {
@@ -496,36 +387,33 @@ function buildError(err: any): any {
 export async function execute(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<number> {
   const p = toArray(args)
   return new Promise<number>((resolve, reject) => {
-    return pool.execute<ResultSetHeader>(sql, p, (err, res) => {
+    pool.execute<ResultSetHeader>(sql, p, (err, res) => {
       if (err) {
         buildError(err)
         return reject(err)
-      } else {
-        return resolve(res.affectedRows)
       }
+      return resolve(res.affectedRows)
     })
   })
 }
 export async function query<T>(pool: Pool | PoolConnection, sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T[]> {
   const p = toArray(args)
-  return new Promise((resolve, reject) => {
-    return pool.query<T[] & ResultSetHeader>(sql, p, (err, results, fields) => {
+  return new Promise<T[]>((resolve, reject) => {
+    pool.query<T[] & ResultSetHeader>(sql, p, (err, results, fields) => {
       if (err) {
         return reject(err)
-      } else {
-        if (results.length > 0) {
-          const arrayResult = results.map((item) => {
-            if (Array.isArray(item)) {
-              return formatData<T>(fields, item)
-            } else {
-              return item
-            }
-          })
-          return resolve(handleResults(arrayResult, m, bools))
-        } else {
-          resolve([])
-        }
       }
+      if (results.length === 0) {
+        return resolve([])
+      }
+      const arrayResult = results.map((item) => {
+        if (Array.isArray(item)) {
+          return formatData<T>(fields, item)
+        }
+
+        return item
+      })
+      return resolve(handleResults(arrayResult, m, bools))
     })
   })
 }
@@ -538,11 +426,10 @@ export function queryOne<T>(pool: Pool | PoolConnection, sql: string, args?: any
 export function executeScalar<T>(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<T> {
   return queryOne<T>(pool, sql, args).then((r) => {
     if (!r) {
-      return null
-    } else {
-      const keys = Object.keys(r)
-      return (r as any)[keys[0]]
+      return null as any
     }
+    const keys = Object.keys(r)
+    return (r as any)[keys[0]]
   })
 }
 
@@ -550,14 +437,7 @@ export function count(pool: Pool | PoolConnection, sql: string, args?: any[]): P
   return executeScalar<number>(pool, sql, args)
 }
 
-export function save<T>(
-  pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>),
-  obj: T,
-  table: string,
-  attrs: Attributes,
-  ver?: string,
-  buildParam?: (i: number) => string,
-): Promise<number> {
+export function save<T>(pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>), obj: T, table: string, attrs: Attributes, ver?: string, buildParam?: (i: number) => string): Promise<number> {
   const s = buildToSave(obj, table, attrs, ver, buildParam)
   if (!s.query) {
     return Promise.resolve(-1)
@@ -568,14 +448,7 @@ export function save<T>(
     return execute(pool, s.query, s.params)
   }
 }
-export function saveBatch<T>(
-  pool: Pool | ((statements: Statement[]) => Promise<number>),
-  objs: T[],
-  table: string,
-  attrs: Attributes,
-  ver?: string,
-  buildParam?: (i: number) => string,
-): Promise<number> {
+export function saveBatch<T>(pool: Pool | ((statements: Statement[]) => Promise<number>), objs: T[], table: string, attrs: Attributes, ver?: string, buildParam?: (i: number) => string): Promise<number> {
   const s = buildToSaveBatch(objs, table, attrs, ver, buildParam)
   if (typeof pool === "function") {
     return pool(s)
@@ -588,64 +461,61 @@ export function toArray(arr?: any[]): any[] {
     return []
   }
   const p: any[] = []
-  const l = arr.length
-  for (let i = 0; i < l; i++) {
-    if (arr[i] === undefined || arr[i] == null) {
+  for (const value of arr) {
+    if (value === undefined || value === null) {
       p.push(null)
-    } else {
-      if (typeof arr[i] === "object") {
-        if (arr[i] instanceof Date) {
-          p.push(arr[i])
-        } else {
-          if (resource.string) {
-            const s: string = JSON.stringify(arr[i])
-            p.push(s)
-          } else {
-            p.push(arr[i])
-          }
-        }
-      } else {
-        p.push(arr[i])
-      }
+      continue
     }
+    if (typeof value === "object") {
+      if (value instanceof Date) {
+        p.push(value)
+        continue
+      }
+      if (resource.string) {
+        p.push(JSON.stringify(value))
+      } else {
+        p.push(value)
+      }
+      continue
+    }
+    p.push(value)
   }
   return p
 }
-export function handleResults<T>(r: T[], m?: StringMap, bools?: Attribute[]) {
+export function handleResults<T>(r: T[], m?: StringMap, bools?: Attribute[]): T[] {
   if (m) {
     const res = mapArray(r, m)
     if (bools && bools.length > 0) {
       return handleBool(res, bools)
-    } else {
-      return res
     }
-  } else {
-    if (bools && bools.length > 0) {
-      return handleBool(r, bools)
-    } else {
-      return r
-    }
+    return res
   }
+  if (bools && bools.length > 0) {
+    return handleBool(r, bools)
+  }
+  return r
 }
-export function handleBool<T>(objs: T[], bools: Attribute[]) {
+export function handleBool<T>(objs: T[], bools: Attribute[]): T[] {
   if (!bools || bools.length === 0 || !objs) {
     return objs
   }
   for (const obj of objs) {
     const o: any = obj
     for (const field of bools) {
-      if (field.name) {
-        const v = o[field.name]
-        if (typeof v !== "boolean" && v != null && v !== undefined) {
-          const b = field.true
-          if (b == null || b === undefined) {
-            // tslint:disable-next-line:triple-equals
-            o[field.name] = "1" == v || "T" == v || "Y" == v || "true" == v || "on" == v
-          } else {
-            // tslint:disable-next-line:triple-equals
-            o[field.name] = v == b ? true : false
-          }
-        }
+      if (!field.name) {
+        continue
+      }
+      const v = o[field.name]
+      if (typeof v === "boolean" || v == null) {
+        continue
+      }
+      const b = field.true
+      if (b == null) {
+        // tslint:disable-next-line:triple-equals
+        o[field.name] = "1" == v || "T" == v || "Y" == v || "true" == v || "on" == v
+      } else {
+        // tslint:disable-next-line:triple-equals
+        o[field.name] = v == b
       }
     }
   }
@@ -655,7 +525,7 @@ export function formatData<T>(nameColumn: FieldPacket[], data: any, m?: StringMa
   const result: any = {}
   nameColumn.forEach((item, index) => {
     let key = item.name
-    if (m) {
+    if (m && m[item.name]) {
       key = m[item.name]
     }
     result[key] = data[index]
@@ -689,10 +559,8 @@ export function mapArray<T>(results: T[], m?: StringMap): T[] {
   if (mkeys.length === 0) {
     return results
   }
-  const objs = []
-  const length = results.length
-  for (let i = 0; i < length; i++) {
-    const obj = results[i]
+  const objs: T[] = []
+  for (const obj of results) {
     const obj2: any = {}
     const keys = Object.keys(obj as any)
     for (const key of keys) {
