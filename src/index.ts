@@ -619,11 +619,11 @@ export function isEmpty(s: string): boolean {
   return !(s && s.length > 0)
 }
 // tslint:disable-next-line:max-classes-per-file
-export class StringService {
+export class StringAdapter {
   constructor(
     protected pool: Pool | PoolConnection,
-    public table: string,
-    public column: string,
+    protected table: string,
+    protected column: string,
   ) {
     this.load = this.load.bind(this)
     this.save = this.save.bind(this)
