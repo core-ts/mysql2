@@ -1,7 +1,10 @@
 # mysql2-core
 
-A lightweight TypeScript database abstraction for [mysql2](https://www.npmjs.com/package/mysql2), providing a unified API for connection pools, transactions, SQL execution, queries, result mapping, batch execution, and common database utilities.
-
+A lightweight TypeScript database abstraction for [mysql2](https://www.npmjs.com/package/mysql2), which has 4 main parts:
+- A unified API for connection pools, transactions, SQL execution, queries, result mapping, batch execution, and common database utilities.
+- Utilities for building and executing MySQL statements with [`mysql2`](https://www.npmjs.com/package/mysql2).
+- A metadata-driven persistence layer with support for single records, batch operations, buffered streaming writes, transactions, and configurable value mapping.
+- Health check
 ### Example
 - [sql-modular-sample](https://github.com/source-code-template/sql-modular-sample): RESI API with express and MySQL
 
@@ -704,25 +707,7 @@ Executor
 
 This allows application code to depend on `DB` and `Transaction` rather than directly depending on `Pool` and `PoolConnection`.
 
-## License
-
-MIT
-
-
-
-# mysql2-core
-
-Lightweight TypeScript utilities for building and executing MySQL statements with [`mysql2`](https://www.npmjs.com/package/mysql2).
-
-`mysql2-core` provides a metadata-driven persistence layer with support for single records, batch operations, buffered streaming writes, transactions, and configurable value mapping.
-
-## Installation
-
-```bash
-npm install mysql2-core mysql2
-```
-
-## Overview
+## SQL Builder
 
 The library is built around three main concepts:
 
@@ -1066,11 +1051,7 @@ const attributes: Attributes = {
 ```ts
 import { MySQLWriter } from "mysql2-core"
 
-const writer = new MySQLWriter(
-  pool,
-  "users",
-  attributes
-)
+const writer = new MySQLWriter(pool, "users", attributes)
 
 const count = await writer.write({
   id: 1,
@@ -1137,11 +1118,7 @@ The result becomes:
 ```ts
 import { MySQLBatchWriter } from "mysql2-core"
 
-const writer = new MySQLBatchWriter(
-  pool,
-  "users",
-  attributes
-)
+const writer = new MySQLBatchWriter(pool, "users", attributes)
 
 const count = await writer.write([
   {
@@ -1166,12 +1143,7 @@ The objects are converted into multiple statements using `buildToSaveBatch()` an
 ```ts
 import { MySQLStreamWriter } from "mysql2-core"
 
-const writer = new MySQLStreamWriter(
-  pool,
-  "users",
-  attributes,
-  1000
-)
+const writer = new MySQLStreamWriter(pool, "users", attributes, 1000)
 
 for (const user of users) {
   await writer.write(user)
@@ -1293,11 +1265,7 @@ This allows the statements to participate in an existing transaction.
 The library exposes transaction helpers:
 
 ```ts
-import {
-  beginTransaction,
-  commit,
-  rollback
-} from "mysql2-core"
+import { beginTransaction, commit, rollback } from "mysql2-core"
 ```
 
 Example:
@@ -1449,6 +1417,41 @@ MySQLBatchWriter<T>
 MySQLStreamWriter<T>
 ```
 
+## Health Check
+
+Built-in MySQL health checker.
+
+Designed for cloud-native deployments.
+
+Features:
+
+* Connection validation
+* Query validation
+* Response time measurement
+* Configurable timeout
+* Kubernetes readiness and liveness probes
+
+Example:
+
+```typescript
+const checker = new MySQLChecker(pool.promise());
+
+const result = await checker.check();
+```
+
+Example response
+
+```json
+{
+  "status": "UP",
+  "details": {
+    "mysql": {
+      "status": "UP"
+    }
+  }
+}
+```
+
 ## Design Philosophy
 
 `mysql2-core` sits between raw `mysql2` and a full ORM.
@@ -1481,6 +1484,20 @@ It provides reusable persistence mechanics without introducing entity tracking, 
 ## License
 
 MIT
+
+
+
+## License
+
+MIT
+
+
+
+# mysql2-core
+
+Lightweight TypeScript utilities for building and executing MySQL statements with [`mysql2`](https://www.npmjs.com/package/mysql2).
+
+`mysql2-core` provides a metadata-driven persistence layer with support for single records, batch operations, buffered streaming writes, transactions, and configurable value mapping.
 
 
 # mysql2-core
