@@ -129,7 +129,7 @@ export class PoolManager implements DB {
     const p = ctx ? ctx : this.pool
     return queryOne(p, sql, args, m, bools)
   }
-  executeScalar<T>(sql: string, args?: any[], ctx?: any): Promise<T> {
+  executeScalar<T>(sql: string, args?: any[], ctx?: any): Promise<T | null> {
     const p = ctx ? ctx : this.pool
     return executeScalar<T>(p, sql, args)
   }
@@ -202,7 +202,7 @@ export class PoolConnectionManager implements Transaction {
     const p = ctx ? ctx : this.connection
     return queryOne(p, sql, args, m, bools)
   }
-  executeScalar<T>(sql: string, args?: any[], ctx?: any): Promise<T> {
+  executeScalar<T>(sql: string, args?: any[], ctx?: any): Promise<T | null> {
     const p = ctx ? ctx : this.connection
     return executeScalar<T>(p, sql, args)
   }
@@ -423,10 +423,10 @@ export function queryOne<T>(pool: Pool | PoolConnection, sql: string, args?: any
     return r && r.length > 0 ? r[0] : null
   })
 }
-export function executeScalar<T>(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<T> {
+export function executeScalar<T>(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<T | null> {
   return queryOne<T>(pool, sql, args).then((r) => {
     if (!r) {
-      return null as any
+      return null
     }
     const keys = Object.keys(r)
     return (r as any)[keys[0]]
@@ -434,7 +434,7 @@ export function executeScalar<T>(pool: Pool | PoolConnection, sql: string, args?
 }
 
 export function count(pool: Pool | PoolConnection, sql: string, args?: any[]): Promise<number> {
-  return executeScalar<number>(pool, sql, args)
+  return executeScalar<number>(pool, sql, args).then((res) => (res !== null ? res : 0))
 }
 
 export function save<T>(pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>), obj: T, table: string, attrs: Attributes, ver?: string, buildParam?: (i: number) => string): Promise<number> {
