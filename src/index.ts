@@ -1051,6 +1051,9 @@ export class MySQLChecker implements HealthChecker {
   }
 }
 
+export interface SimpleMap {
+  [key: string]: string | number | boolean | Date
+}
 export interface Formatter<T> {
   format: (row: T) => string
 }
@@ -1065,44 +1068,60 @@ export interface QueryBuilder {
 // tslint:disable-next-line:max-classes-per-file
 export class Exporter<T> {
   constructor(
-    public connection: Connection,
-    public buildQuery: (ctx?: any) => Promise<Statement>,
-    ft: (row: T) => string,
-    public write: (chunk: string) => boolean,
-    public end: (cb?: () => void) => void,
-    public attributes?: Attributes,
+    protected connection: Connection,
+    protected filename: string,
+    protected buildQuery: (ctx?: any) => Promise<Statement>,
+    protected format: (row: T) => string,
+    protected write: (chunk: string) => boolean,
+    protected end: (cb?: () => void) => void,
+    protected attributes?: Attributes,
+    protected logInfo?: (msg: string, m?: SimpleMap) => void,
+    protected progressSize: number = 10000,
   ) {
-    this.format = ft
     if (attributes) {
       this.map = buildMap(attributes)
     }
     this.export = this.export.bind(this)
   }
   map?: StringMap
-  format: (row: T) => string
   async export(ctx?: any): Promise<number> {
-    let idx = 0
     const stmt = await this.buildQuery(ctx)
     const reader = this.connection.query(stmt.query, stmt.params)
     let er: any
+    let i = 0
+    let k = 0
     reader.on("error", (err) => (er = err))
     // (D2) WRITE ROW-BY-ROW
     if (this.map) {
       reader.on("result", async (row: any) => {
-        ++idx
+        ++i
+        k++
         this.connection.pause()
         const obj = mapOne<T>(row, this.map)
         const data = this.format(obj)
         this.write(data)
         this.connection.resume()
+        if (k >= this.progressSize) {
+          if (this.logInfo) {
+            this.logInfo(`Progress: ${i} records processed of file '${this.filename}'`)
+          }
+          k = 0
+        }
       })
     } else {
       reader.on("result", async (row: any) => {
-        ++idx
+        ++i
+        k++
         this.connection.pause()
         const data = this.format(row as T)
         this.write(data)
         this.connection.resume()
+        if (k >= this.progressSize) {
+          if (this.logInfo) {
+            this.logInfo(`Progress: ${i} records processed of file '${this.filename}'`)
+          }
+          k = 0
+        }
       })
     }
     // (D3) CLOSE CONNECTION + FILE
@@ -1116,7 +1135,7 @@ export class Exporter<T> {
             if (err) {
               reject(err)
             } else {
-              resolve(idx)
+              resolve(i)
             }
           })
         }
@@ -1127,11 +1146,14 @@ export class Exporter<T> {
 // tslint:disable-next-line:max-classes-per-file
 export class ExportService<T> {
   constructor(
-    public connection: Connection,
-    public queryBuilder: QueryBuilder,
-    public formatter: Formatter<T>,
-    public writer: FileWriter,
-    public attributes?: Attributes,
+    protected connection: Connection,
+    protected filename: string,
+    protected queryBuilder: QueryBuilder,
+    protected formatter: Formatter<T>,
+    protected writer: FileWriter,
+    protected attributes?: Attributes,
+    protected logInfo?: (msg: string, m?: SimpleMap) => void,
+    protected progressSize: number = 10000,
   ) {
     if (attributes) {
       this.map = buildMap(attributes)
@@ -1140,28 +1162,43 @@ export class ExportService<T> {
   }
   map?: StringMap
   async export(ctx?: any): Promise<number> {
-    let idx = 0
     const stmt = await this.queryBuilder.build(ctx)
     const reader = this.connection.query(stmt.query, stmt.params)
     let er: any
     reader.on("error", (err) => (er = err))
+    let i = 0
+    let k = 0
     // (D2) WRITE ROW-BY-ROW
     if (this.map) {
       reader.on("result", async (row: any) => {
-        ++idx
+        ++i
+        k++
         this.connection.pause()
         const obj = mapOne<T>(row, this.map)
         const data = this.formatter.format(obj)
         this.writer.write(data)
         this.connection.resume()
+        if (k >= this.progressSize) {
+          if (this.logInfo) {
+            this.logInfo(`Progress: ${i} records processed of file '${this.filename}'`)
+          }
+          k = 0
+        }
       })
     } else {
       reader.on("result", async (row: any) => {
-        ++idx
+        ++i
+        k++
         this.connection.pause()
         const data = this.formatter.format(row as T)
         this.writer.write(data)
         this.connection.resume()
+        if (k >= this.progressSize) {
+          if (this.logInfo) {
+            this.logInfo(`Progress: ${i} records processed of file '${this.filename}'`)
+          }
+          k = 0
+        }
       })
     }
     // (D3) CLOSE CONNECTION + FILE
@@ -1179,7 +1216,7 @@ export class ExportService<T> {
             if (err) {
               reject(err)
             } else {
-              resolve(idx)
+              resolve(i)
             }
           })
         }
