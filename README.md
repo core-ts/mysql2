@@ -291,9 +291,34 @@ The connection is released after completion.
 await db.executeBatch(statements, true)
 ```
 
-When enabled, the first statement is executed first. If it affects zero rows, the batch stops and returns `0`.
+When `firstSuccess` is `true`, the first statement determines whether the remaining statements are executed.
 
-When the first statement affects one or more rows, the remaining statements are executed.
+If the first statement affects at least one row:
+
+```text
+statement 1
+    │
+    ├── rowCount > 0
+    │
+    ▼
+statement 2
+    ↓
+statement 3
+    ↓
+...
+```
+
+If the first statement affects zero rows:
+
+```text
+statement 1
+    │
+    └── rowCount = 0
+            ↓
+       stop remaining statements
+```
+
+The batch still completes its transaction lifecycle.
 
 For example:
 
@@ -1476,18 +1501,42 @@ Application
 
 It provides reusable persistence mechanics without introducing entity tracking, relationships, lazy loading, or a large ORM model.
 
+## Ecosystem
+[`mysql2-core`](https://www.npmjs.com/package/mysql2-core) can work with [`sql-core`](https://www.npmjs.com/package/sql-core) and [`query-mappers`](https://www.npmjs.com/package/query-mappers). They separate responsibilities into independent layers.
+
+* SQL generation belongs to [`sql-core`](https://www.npmjs.com/package/sql-core)
+* Object mapping belongs to [`query-mappers`](https://www.npmjs.com/package/query-mappers)
+* MySQL execution belongs to [`mysql2-core`](https://www.npmjs.com/package/mysql2-core)
+
+This architecture keeps applications lightweight, modular, and easy to maintain.
+
+```text
+ Application
+      │
+      ▼
+ Repository (sql-core)
+      │
+      ▼
+ mysql2-core
+      │
+      ▼
+    MySQL
+```
+
+### Responsibilities
+
+| Package                                                        | Responsibility                                                      |
+|----------------------------------------------------------------|---------------------------------------------------------------------|
+| [`mysql2-core`](https://www.npmjs.com/package/mysql2-core)     | MySQL execution, repositories, writers, streaming, health checks    |
+| [`sql-core`](https://www.npmjs.com/package/sql-core)           | Database-independent repositories, CRUD, SQL builders, transactions |
+| [`query-mappers`](https://www.npmjs.com/package/query-mappers) | Maps database rows to TypeScript models                             |
+
 ## Requirements
 
 * Node.js
 * TypeScript
 * MySQL
 * [`mysql2`](https://www.npmjs.com/package/mysql2)
-
-## License
-
-MIT
-
-
 
 ## License
 
