@@ -688,25 +688,6 @@ export class UserRepository {
 }
 ```
 
-## Design Philosophy
-
-`mysql2-core` keeps the database layer small while providing a consistent abstraction over the lower-level `mysql2` API.
-
-The main design is based on three concepts:
-
-```text
-Executor
-   │
-   ├── DB
-   │    └── beginTransaction()
-   │
-   └── Transaction
-        ├── commit()
-        └── rollback()
-```
-
-This allows application code to depend on `DB` and `Transaction` rather than directly depending on `Pool` and `PoolConnection`.
-
 ## SQL Builder
 
 The library is built around three main concepts:
@@ -1453,6 +1434,27 @@ Example response
 ```
 
 ## Design Philosophy
+
+### Database Abstraction
+
+`mysql2-core` keeps the database layer small while providing a consistent abstraction over the lower-level `mysql2` API.
+
+The main design is based on three concepts:
+
+```text
+Executor
+   │
+   ├── DB
+   │    └── beginTransaction()
+   │
+   └── Transaction
+        ├── commit()
+        └── rollback()
+```
+
+This allows application code to depend on `DB` and `Transaction` rather than directly depending on `Pool` and `PoolConnection`.
+
+### SQL Builder
 
 `mysql2-core` sits between raw `mysql2` and a full ORM.
 
