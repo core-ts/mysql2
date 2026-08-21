@@ -113,29 +113,23 @@ export class PoolManager implements DB {
       })
     })
   }
-  execute(sql: string, args?: any[], ctx?: any): Promise<number> {
-    const p = ctx ? ctx : this.pool
-    return execute(p, sql, args)
+  execute(sql: string, args?: any[]): Promise<number> {
+    return execute(this.pool, sql, args)
   }
-  executeBatch(statements: Statement[], firstSuccess?: boolean, ctx?: any): Promise<number> {
-    const p = ctx ? ctx : this.pool
-    return executeBatch(p, statements, firstSuccess)
+  executeBatch(statements: Statement[], firstAffected?: boolean): Promise<number> {
+    return executeBatch(this.pool, statements, firstAffected)
   }
-  query<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[], ctx?: any): Promise<T[]> {
-    const p = ctx ? ctx : this.pool
-    return query(p, sql, args, m, bools)
+  query<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T[]> {
+    return query(this.pool, sql, args, m, bools)
   }
-  queryOne<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[], ctx?: any): Promise<T | null> {
-    const p = ctx ? ctx : this.pool
-    return queryOne(p, sql, args, m, bools)
+  queryOne<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T | null> {
+    return queryOne(this.pool, sql, args, m, bools)
   }
-  executeScalar<T>(sql: string, args?: any[], ctx?: any): Promise<T | null> {
-    const p = ctx ? ctx : this.pool
-    return executeScalar<T>(p, sql, args)
+  executeScalar<T>(sql: string, args?: any[]): Promise<T | null> {
+    return executeScalar<T>(this.pool, sql, args)
   }
-  count(sql: string, args?: any[], ctx?: any): Promise<number> {
-    const p = ctx ? ctx : this.pool
-    return count(p, sql, args)
+  count(sql: string, args?: any[]): Promise<number> {
+    return count(this.pool, sql, args)
   }
 }
 // tslint:disable-next-line:max-classes-per-file
@@ -186,32 +180,26 @@ export class PoolConnectionManager implements Transaction {
     this.released = true
     this.connection.release()
   }
-  execute(sql: string, args?: any[], ctx?: any): Promise<number> {
-    const p = ctx ? ctx : this.connection
-    return execute(p, sql, args)
+  execute(sql: string, args?: any[]): Promise<number> {
+    return execute(this.connection, sql, args)
   }
-  executeBatch(statements: Statement[], firstSuccess?: boolean, ctx?: any): Promise<number> {
-    const p = ctx ? ctx : this.connection
-    return executeBatchConnection(p, statements, firstSuccess)
+  executeBatch(statements: Statement[], firstAffected?: boolean): Promise<number> {
+    return executeBatchConnection(this.connection, statements, firstAffected)
   }
   query<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[], ctx?: any): Promise<T[]> {
-    const p = ctx ? ctx : this.connection
-    return query(p, sql, args, m, bools)
+    return query(this.connection, sql, args, m, bools)
   }
-  queryOne<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[], ctx?: any): Promise<T | null> {
-    const p = ctx ? ctx : this.connection
-    return queryOne(p, sql, args, m, bools)
+  queryOne<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T | null> {
+    return queryOne(this.connection, sql, args, m, bools)
   }
-  executeScalar<T>(sql: string, args?: any[], ctx?: any): Promise<T | null> {
-    const p = ctx ? ctx : this.connection
-    return executeScalar<T>(p, sql, args)
+  executeScalar<T>(sql: string, args?: any[]): Promise<T | null> {
+    return executeScalar<T>(this.connection, sql, args)
   }
-  count(sql: string, args?: any[], ctx?: any): Promise<number> {
-    const p = ctx ? ctx : this.connection
-    return count(p, sql, args)
+  count(sql: string, args?: any[]): Promise<number> {
+    return count(this.connection, sql, args)
   }
 }
-export async function executeBatch(pool: Pool, statements: Statement[], firstSuccess?: boolean): Promise<number> {
+export async function executeBatch(pool: Pool, statements: Statement[], firstAffected?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
     return 0
   }
@@ -220,12 +208,12 @@ export async function executeBatch(pool: Pool, statements: Statement[], firstSuc
   }
   const connection = await getConnection(pool)
   try {
-    return await executeBatchConnectionTx(connection, statements, firstSuccess)
+    return await executeBatchConnectionTx(connection, statements, firstAffected)
   } finally {
     connection.release()
   }
 }
-export async function executeBatchConnectionTx(connection: PoolConnection, statements: Statement[], firstSuccess?: boolean): Promise<number> {
+export async function executeBatchConnectionTx(connection: PoolConnection, statements: Statement[], firstAffected?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
     return 0
   }
@@ -237,7 +225,7 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
     let count = 0
 
     if (resource.multipleStatements) {
-      if (firstSuccess) {
+      if (firstAffected) {
         const firstCount = await execute(connection, statements[0].query, statements[0].params)
 
         count = firstCount
@@ -252,8 +240,8 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
         count = await executeMultipleStatements(connection, statements)
       }
     } else {
-      const start = firstSuccess ? 1 : 0
-      if (firstSuccess) {
+      const start = firstAffected ? 1 : 0
+      if (firstAffected) {
         const firstCount = await execute(connection, statements[0].query, statements[0].params)
         count = firstCount
         if (firstCount === 0) {
@@ -276,12 +264,11 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
     } catch {
       // Preserve the original error.
     }
-
     throw buildError(err)
   }
 }
 
-export async function executeBatchConnection(connection: PoolConnection, statements: Statement[], firstSuccess?: boolean): Promise<number> {
+export async function executeBatchConnection(connection: PoolConnection, statements: Statement[], firstAffected?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
     return 0
   }
@@ -291,7 +278,7 @@ export async function executeBatchConnection(connection: PoolConnection, stateme
   }
 
   if (resource.multipleStatements) {
-    if (firstSuccess) {
+    if (firstAffected) {
       const firstCount = await execute(connection, statements[0].query, statements[0].params)
 
       if (firstCount === 0) {
@@ -305,9 +292,9 @@ export async function executeBatchConnection(connection: PoolConnection, stateme
   }
 
   let count = 0
-  const start = firstSuccess ? 1 : 0
+  const start = firstAffected ? 1 : 0
 
-  if (firstSuccess) {
+  if (firstAffected) {
     const firstCount = await execute(connection, statements[0].query, statements[0].params)
 
     count = firstCount
@@ -437,8 +424,8 @@ export function count(pool: Pool | PoolConnection, sql: string, args?: any[]): P
   return executeScalar<number>(pool, sql, args).then((res) => (res !== null ? res : 0))
 }
 
-export function save<T>(pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>), obj: T, table: string, attrs: Attributes, ver?: string, buildParam?: (i: number) => string): Promise<number> {
-  const s = buildToSave(obj, table, attrs, ver, buildParam)
+export function save<T>(pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>), obj: T, table: string, attrs: Attributes, buildParam?: (i: number) => string): Promise<number> {
+  const s = buildToSave(obj, table, attrs, buildParam)
   if (!s.query) {
     return Promise.resolve(-1)
   }
@@ -448,8 +435,8 @@ export function save<T>(pool: Pool | PoolConnection | ((sql: string, args?: any[
     return execute(pool, s.query, s.params)
   }
 }
-export function saveBatch<T>(pool: Pool | ((statements: Statement[]) => Promise<number>), objs: T[], table: string, attrs: Attributes, ver?: string, buildParam?: (i: number) => string): Promise<number> {
-  const s = buildToSaveBatch(objs, table, attrs, ver, buildParam)
+export function saveBatch<T>(pool: Pool | ((statements: Statement[]) => Promise<number>), objs: T[], table: string, attrs: Attributes, buildParam?: (i: number) => string): Promise<number> {
+  const s = buildToSaveBatch(objs, table, attrs, buildParam)
   if (typeof pool === "function") {
     return pool(s)
   } else {
@@ -647,20 +634,8 @@ export class StringAdapter {
   }
 }
 
-export function version(attrs: Attributes): Attribute | undefined {
-  const ks = Object.keys(attrs)
-  for (const k of ks) {
-    const attr = attrs[k]
-    if (attr.version) {
-      attr.name = k
-      return attr
-    }
-  }
-  return undefined
-}
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLWriter<T> {
-  protected version?: string
   protected param?: (i: number) => string
   constructor(
     protected pool: Pool | PoolConnection,
@@ -672,10 +647,6 @@ export class MySQLWriter<T> {
   ) {
     this.write = this.write.bind(this)
     this.param = buildParam ? buildParam : param
-    const x = version(attributes)
-    if (x) {
-      this.version = x.name
-    }
   }
   write(obj: T): Promise<number> {
     if (!obj) {
@@ -685,7 +656,7 @@ export class MySQLWriter<T> {
     if (this.map) {
       obj2 = this.map(obj)
     }
-    const stmt = buildToSave(obj2, this.table, this.attributes, this.version, this.param)
+    const stmt = buildToSave(obj2, this.table, this.attributes, this.param)
     if (stmt.query) {
       if (this.oneIfSuccess) {
         return execute(this.pool, stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
@@ -700,7 +671,6 @@ export class MySQLWriter<T> {
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLStreamWriter<T> {
   protected list: T[] = []
-  protected version?: string
   protected param?: (i: number) => string
   constructor(
     protected pool: Pool,
@@ -713,10 +683,6 @@ export class MySQLStreamWriter<T> {
     this.write = this.write.bind(this)
     this.flush = this.flush.bind(this)
     this.param = buildParam ? buildParam : param
-    const x = version(attributes)
-    if (x) {
-      this.version = x.name
-    }
   }
   write(obj: T): Promise<number> {
     if (!obj) {
@@ -739,14 +705,14 @@ export class MySQLStreamWriter<T> {
     if (!this.list || this.list.length === 0) {
       return Promise.resolve(0)
     } else {
-      const total = this.list.length
-      const stmt = buildToSaveBatch(this.list, this.table, this.attributes, this.version, this.param)
+      const stmt = buildToSaveBatch(this.list, this.table, this.attributes, this.param)
       if (stmt.length > 0) {
         return executeBatch(this.pool as any, stmt).then((r) => {
           this.list = []
-          return total
+          return stmt.length
         })
       } else {
+        this.list = []
         return Promise.resolve(0)
       }
     }
@@ -754,7 +720,6 @@ export class MySQLStreamWriter<T> {
 }
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLBatchWriter<T> {
-  protected version?: string
   protected param?: (i: number) => string
   constructor(
     protected pool: Pool,
@@ -766,10 +731,6 @@ export class MySQLBatchWriter<T> {
   ) {
     this.write = this.write.bind(this)
     this.param = buildParam ? buildParam : param
-    const x = version(attributes)
-    if (x) {
-      this.version = x.name
-    }
   }
   write(objs: T[]): Promise<number> {
     if (!objs || objs.length === 0) {
@@ -783,7 +744,7 @@ export class MySQLBatchWriter<T> {
         list.push(obj2)
       }
     }
-    const stmts = buildToSaveBatch(list, this.table, this.attributes, this.version, this.param)
+    const stmts = buildToSaveBatch(list, this.table, this.attributes, this.param)
     if (stmts.length > 0) {
       if (this.oneIfSuccess) {
         return executeBatch(this.pool, stmts).then((ct) => stmts.length)
@@ -903,38 +864,38 @@ export class Exporter<T> {
     const reader = this.connection.query(stmt.query, stmt.params)
     let er: any
     let i = 0
-    let k = 0
+    let j = 0
     reader.on("error", (err) => (er = err))
     // (D2) WRITE ROW-BY-ROW
     if (this.map) {
       reader.on("result", async (row: any) => {
         ++i
-        k++
+        j++
         this.connection.pause()
         const obj = mapOne<T>(row, this.map)
         const data = this.format(obj)
         this.write(data)
         this.connection.resume()
-        if (k >= this.progressSize) {
+        if (j >= this.progressSize) {
           if (this.logInfo) {
             this.logInfo(`Progress: ${i} records processed of file '${this.filename}'`)
           }
-          k = 0
+          j = 0
         }
       })
     } else {
       reader.on("result", async (row: any) => {
         ++i
-        k++
+        j++
         this.connection.pause()
         const data = this.format(row as T)
         this.write(data)
         this.connection.resume()
-        if (k >= this.progressSize) {
+        if (j >= this.progressSize) {
           if (this.logInfo) {
             this.logInfo(`Progress: ${i} records processed of file '${this.filename}'`)
           }
-          k = 0
+          j = 0
         }
       })
     }
@@ -981,37 +942,37 @@ export class ExportService<T> {
     let er: any
     reader.on("error", (err) => (er = err))
     let i = 0
-    let k = 0
+    let j = 0
     // (D2) WRITE ROW-BY-ROW
     if (this.map) {
       reader.on("result", async (row: any) => {
         ++i
-        k++
+        j++
         this.connection.pause()
         const obj = mapOne<T>(row, this.map)
         const data = this.formatter.format(obj)
         this.writer.write(data)
         this.connection.resume()
-        if (k >= this.progressSize) {
+        if (j >= this.progressSize) {
           if (this.logInfo) {
             this.logInfo(`Progress: ${i} records processed of file '${this.filename}'`)
           }
-          k = 0
+          j = 0
         }
       })
     } else {
       reader.on("result", async (row: any) => {
         ++i
-        k++
+        j++
         this.connection.pause()
         const data = this.formatter.format(row as T)
         this.writer.write(data)
         this.connection.resume()
-        if (k >= this.progressSize) {
+        if (j >= this.progressSize) {
           if (this.logInfo) {
             this.logInfo(`Progress: ${i} records processed of file '${this.filename}'`)
           }
-          k = 0
+          j = 0
         }
       })
     }

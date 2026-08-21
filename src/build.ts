@@ -59,7 +59,7 @@ export function metadata(attrs: Attributes): Metadata {
   }
   return m
 }
-export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: string, buildParam?: (i: number) => string, i?: number): Statement {
+export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildParam?: (i: number) => string, i?: number): Statement {
   if (!i) {
     i = 1
   }
@@ -86,7 +86,7 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: s
     if (v != null && !attr.ignored && !attr.noinsert) {
       const field = attr.column ? attr.column : k
       cols.push(field)
-      if (k === ver) {
+      if (attr.version) {
         isVersion = true
         values.push(`${1}`)
       } else {
@@ -99,10 +99,10 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: s
           values.push(p)
           if (typeof v === "boolean") {
             if (v === true) {
-              const v2 = attr.true ? attr.true : `'1'`
+              const v2 = attr.true !== undefined ? attr.true : `'1'`
               args.push(v2)
             } else {
-              const v2 = attr.false && attr.false !== 0 ? attr.false : `'0'`
+              const v2 = attr.false !== undefined ? attr.false : `'0'`
               args.push(v2)
             }
           } else {
@@ -111,12 +111,6 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: s
         }
       }
     }
-  }
-  if (!isVersion && ver && ver.length > 0) {
-    const attr = attrs[ver]
-    const field = attr.column ? attr.column : ver
-    cols.push(field)
-    values.push(`${1}`)
   }
   if (pks.length === 0) {
     if (cols.length === 0) {
@@ -144,10 +138,10 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: s
             x = buildParam(i++)
             if (typeof v === "boolean") {
               if (v === true) {
-                const v2 = attr.true ? attr.true : `'1'`
+                const v2 = attr.true !== undefined ? attr.true : `'1'`
                 args.push(v2)
               } else {
-                const v2 = attr.false && attr.false !== 0 ? attr.false : `'0'`
+                const v2 = attr.false !== undefined ? attr.false : `'0'`
                 args.push(v2)
               }
             } else {
@@ -167,7 +161,7 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, ver?: s
     }
   }
 }
-export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes, ver?: string, buildParam?: (i: number) => string): Statement[] {
+export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes, buildParam?: (i: number) => string): Statement[] {
   if (!buildParam) {
     buildParam = param
   }
@@ -189,7 +183,7 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
       if (v != null && !attr.ignored && !attr.noinsert) {
         const field = attr.column ? attr.column : k
         cols.push(field)
-        if (k === ver) {
+        if (attr.version) {
           isVersion = true
           values.push(`${1}`)
         } else {
@@ -202,10 +196,10 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
             values.push(p)
             if (typeof v === "boolean") {
               if (v === true) {
-                const v2 = attr.true ? attr.true : `'1'`
+                const v2 = attr.true !== undefined ? attr.true : `'1'`
                 args.push(v2)
               } else {
-                const v2 = attr.false && attr.false !== 0 ? attr.false : `'0'`
+                const v2 = attr.false !== undefined ? attr.false : `'0'`
                 args.push(v2)
               }
             } else {
@@ -215,18 +209,12 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
         }
       }
     }
-    if (!isVersion && ver && ver.length > 0) {
-      const attr = attrs[ver]
-      const field = attr.column ? attr.column : ver
-      cols.push(field)
-      values.push(`${1}`)
-    }
     const colSet: string[] = []
     for (const k of ks) {
       const v = o[k]
       if (v !== undefined) {
         const attr = attrs[k]
-        if (attr && !attr.key && !attr.ignored && k !== ver && !attr.noupdate) {
+        if (attr && !attr.key && !attr.ignored && !attr.noupdate) {
           const field = attr.column ? attr.column : k
           let x: string
           if (v === null) {
@@ -239,10 +227,10 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
             x = buildParam(i++)
             if (typeof v === "boolean") {
               if (v === true) {
-                const v2 = attr.true ? attr.true : `'1'`
+                const v2 = attr.true !== undefined ? attr.true : `'1'`
                 args.push(v2)
               } else {
-                const v2 = attr.false && attr.false !== 0 ? attr.false : `'0'`
+                const v2 = attr.false !== undefined ? attr.false : `'0'`
                 args.push(v2)
               }
             } else {
