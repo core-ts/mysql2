@@ -54,7 +54,7 @@ interface Executor {
   driver: string
   param(i: number): string
   execute(sql: string, args?: any[], ctx?: any): Promise<number>
-  executeBatch(statements: Statement[], firstAffected?: boolean, ctx?: any): Promise<number>
+  executeBatch(statements: Statement[], requireFirstAffected?: boolean, ctx?: any): Promise<number>
   query<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[], ctx?: any): Promise<T[]>
   queryOne<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[], ctx?: any): Promise<T | null>
   executeScalar<T>(sql: string, args?: any[], ctx?: any): Promise<T | null>
@@ -283,15 +283,15 @@ For multiple statements, the pool-level `executeBatch()` obtains a connection an
 
 The connection is released after completion.
 
-## `firstAffected`
+## `requireFirstAffected`
 
-`executeBatch()` supports an optional `firstAffected` flag:
+`executeBatch()` supports an optional `requireFirstAffected` flag:
 
 ```ts
 await db.executeBatch(statements, true)
 ```
 
-When `firstAffected` is `true`, the first statement determines whether the remaining statements are executed.
+When `requireFirstAffected` is `true`, the first statement determines whether the remaining statements are executed.
 
 If the first statement affects at least one row:
 

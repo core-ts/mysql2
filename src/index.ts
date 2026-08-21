@@ -40,31 +40,23 @@ export function getConnection(pool: Pool): Promise<PoolConnection> {
     })
   })
 }
-export function beginTransaction(connection: PoolConnection, rollbackIfError?: boolean): Promise<void> {
+export function beginTransaction(connection: PoolConnection): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    connection.beginTransaction((err) => {
-      if (err) {
-        if (!rollbackIfError) {
-          return reject(err)
-        }
-        return connection.rollback(() => {
-          return reject(err)
-        })
+    connection.beginTransaction((beginError) => {
+      if (beginError) {
+        connection.release()
+        return reject(beginError)
       }
       return resolve()
     })
   })
 }
-export function commit(connection: PoolConnection, rollbackIfError?: boolean): Promise<void> {
+export function commit(connection: PoolConnection): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     connection.commit((err) => {
+      connection.release()
       if (err) {
-        if (!rollbackIfError) {
-          return reject(err)
-        }
-        return connection.rollback(() => {
-          return reject(err)
-        })
+        return reject(err)
       }
       return resolve()
     })
@@ -73,6 +65,7 @@ export function commit(connection: PoolConnection, rollbackIfError?: boolean): P
 export function rollback(connection: PoolConnection): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     connection.rollback((err) => {
+      connection.release()
       if (err) {
         return reject(err)
       }
@@ -103,10 +96,8 @@ export class PoolManager implements DB {
         }
         connection.beginTransaction((beginError) => {
           if (beginError) {
-            return connection.rollback(() => {
-              connection.release()
-              return reject(beginError)
-            })
+            connection.release()
+            return reject(beginError)
           }
           return resolve(new PoolConnectionManager(connection))
         })
@@ -116,8 +107,8 @@ export class PoolManager implements DB {
   execute(sql: string, args?: any[]): Promise<number> {
     return execute(this.pool, sql, args)
   }
-  executeBatch(statements: Statement[], firstAffected?: boolean): Promise<number> {
-    return executeBatch(this.pool, statements, firstAffected)
+  executeBatch(statements: Statement[], requireFirstAffected?: boolean): Promise<number> {
+    return executeBatch(this.pool, statements, requireFirstAffected)
   }
   query<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T[]> {
     return query(this.pool, sql, args, m, bools)
@@ -143,6 +134,7 @@ export class PoolConnectionManager implements Transaction {
     this.queryOne = this.queryOne.bind(this)
     this.executeScalar = this.executeScalar.bind(this)
     this.count = this.count.bind(this)
+    this.release = this.release.bind(this)
   }
   driver = "mysql"
   param(i: number): string {
@@ -151,13 +143,10 @@ export class PoolConnectionManager implements Transaction {
   commit(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.connection.commit((err) => {
-        if (err) {
-          return this.connection.rollback(() => {
-            this.release()
-            return reject(err)
-          })
-        }
         this.release()
+        if (err) {
+          return reject(err)
+        }
         return resolve()
       })
     })
@@ -183,10 +172,10 @@ export class PoolConnectionManager implements Transaction {
   execute(sql: string, args?: any[]): Promise<number> {
     return execute(this.connection, sql, args)
   }
-  executeBatch(statements: Statement[], firstAffected?: boolean): Promise<number> {
-    return executeBatchConnection(this.connection, statements, firstAffected)
+  executeBatch(statements: Statement[], requireFirstAffected?: boolean): Promise<number> {
+    return executeBatchConnection(this.connection, statements, requireFirstAffected)
   }
-  query<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[], ctx?: any): Promise<T[]> {
+  query<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T[]> {
     return query(this.connection, sql, args, m, bools)
   }
   queryOne<T>(sql: string, args?: any[], m?: StringMap, bools?: Attribute[]): Promise<T | null> {
@@ -199,7 +188,7 @@ export class PoolConnectionManager implements Transaction {
     return count(this.connection, sql, args)
   }
 }
-export async function executeBatch(pool: Pool, statements: Statement[], firstAffected?: boolean): Promise<number> {
+export async function executeBatch(pool: Pool, statements: Statement[], requireFirstAffected?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
     return 0
   }
@@ -208,12 +197,12 @@ export async function executeBatch(pool: Pool, statements: Statement[], firstAff
   }
   const connection = await getConnection(pool)
   try {
-    return await executeBatchConnectionTx(connection, statements, firstAffected)
+    return await executeBatchConnectionTx(connection, statements, requireFirstAffected)
   } finally {
     connection.release()
   }
 }
-export async function executeBatchConnectionTx(connection: PoolConnection, statements: Statement[], firstAffected?: boolean): Promise<number> {
+export async function executeBatchConnectionTx(connection: PoolConnection, statements: Statement[], requireFirstAffected?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
     return 0
   }
@@ -225,7 +214,7 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
     let count = 0
 
     if (resource.multipleStatements) {
-      if (firstAffected) {
+      if (requireFirstAffected) {
         const firstCount = await execute(connection, statements[0].query, statements[0].params)
 
         count = firstCount
@@ -240,8 +229,8 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
         count = await executeMultipleStatements(connection, statements)
       }
     } else {
-      const start = firstAffected ? 1 : 0
-      if (firstAffected) {
+      const start = requireFirstAffected ? 1 : 0
+      if (requireFirstAffected) {
         const firstCount = await execute(connection, statements[0].query, statements[0].params)
         count = firstCount
         if (firstCount === 0) {
@@ -264,11 +253,12 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
     } catch {
       // Preserve the original error.
     }
-    throw buildError(err)
+    buildError(err)
+    throw err
   }
 }
 
-export async function executeBatchConnection(connection: PoolConnection, statements: Statement[], firstAffected?: boolean): Promise<number> {
+export async function executeBatchConnection(connection: PoolConnection, statements: Statement[], requireFirstAffected?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
     return 0
   }
@@ -278,7 +268,7 @@ export async function executeBatchConnection(connection: PoolConnection, stateme
   }
 
   if (resource.multipleStatements) {
-    if (firstAffected) {
+    if (requireFirstAffected) {
       const firstCount = await execute(connection, statements[0].query, statements[0].params)
 
       if (firstCount === 0) {
@@ -292,9 +282,9 @@ export async function executeBatchConnection(connection: PoolConnection, stateme
   }
 
   let count = 0
-  const start = firstAffected ? 1 : 0
+  const start = requireFirstAffected ? 1 : 0
 
-  if (firstAffected) {
+  if (requireFirstAffected) {
     const firstCount = await execute(connection, statements[0].query, statements[0].params)
 
     count = firstCount
@@ -709,7 +699,7 @@ export class MySQLStreamWriter<T> {
       if (stmt.length > 0) {
         return executeBatch(this.pool as any, stmt).then((r) => {
           this.list = []
-          return stmt.length
+          return r
         })
       } else {
         this.list = []
@@ -725,7 +715,6 @@ export class MySQLBatchWriter<T> {
     protected pool: Pool,
     protected table: string,
     protected attributes: Attributes,
-    protected oneIfSuccess?: boolean,
     protected map?: (v: T) => T,
     buildParam?: (i: number) => string,
   ) {
@@ -746,11 +735,7 @@ export class MySQLBatchWriter<T> {
     }
     const stmts = buildToSaveBatch(list, this.table, this.attributes, this.param)
     if (stmts.length > 0) {
-      if (this.oneIfSuccess) {
-        return executeBatch(this.pool, stmts).then((ct) => stmts.length)
-      } else {
-        return executeBatch(this.pool, stmts)
-      }
+      return executeBatch(this.pool, stmts)
     } else {
       return Promise.resolve(0)
     }
