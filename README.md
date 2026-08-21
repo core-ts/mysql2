@@ -102,12 +102,15 @@ const pool = createPool({
 
 The library also supports the `max` option as an alias for `connectionLimit` when `connectionLimit` is not explicitly provided.
 
+--- 
+
 ## Using `PoolManager`
 
 `PoolManager` provides the `DB` implementation for a MySQL connection pool.
 
 ```ts
-import { createPool, PoolManager} from "mysql2-core"
+import { createPool } from "mysql2"
+import { PoolManager} from "mysql2-core"
 
 const pool = createPool({
   host: "localhost",
@@ -198,7 +201,25 @@ if (!user) {
 
 ## Execute Scalar
 
-`executeScalar()` returns the first column of the first row.
+`executeScalar()` is intended for queries that return a single scalar value.
+
+It is particularly useful for queries such as:
+
+```sql
+SELECT COUNT(*)
+SELECT MAX(id)
+SELECT MIN(id)
+```
+
+Example:
+
+```ts
+const maxId = await db.executeScalar<number>(
+  "SELECT MAX(id) FROM users"
+)
+```
+
+Another example:
 
 ```ts
 const username = await db.executeScalar<string>(
@@ -206,6 +227,8 @@ const username = await db.executeScalar<string>(
   [10]
 )
 ```
+
+`executeScalar()` returns the first column of the first row.
 
 If there is no row, it returns `null`.
 
@@ -220,7 +243,9 @@ const total = await db.count(
 )
 ```
 
-A missing scalar result is returned as `0`.
+The result is always a `number`.
+
+If the scalar result is `null`, `count()` returns `0`.
 
 ## Transactions
 
@@ -240,9 +265,9 @@ try {
     [100, 2]
   )
 
-  await tx.commit()
+  await tx.commit() // release connection inside commit
 } catch (err) {
-  await tx.rollback()
+  await tx.rollback() // release connection inside rollback
   throw err
 }
 ```
@@ -250,6 +275,8 @@ try {
 `PoolManager.beginTransaction()` obtains a connection from the pool, starts a MySQL transaction, and returns a `PoolConnectionManager`.
 
 The connection is released when `commit()` or `rollback()` completes.
+
+The transaction manager also protects against releasing the same connection more than once.
 
 ## Batch Execution
 
@@ -357,6 +384,8 @@ resource.multipleStatements = true
 
 Each statement is terminated with a semicolon when necessary, and parameters are flattened into a single parameter array.
 
+---
+
 ## Direct Connection Operations
 
 The library also exposes functions that work directly with a `Pool` or `PoolConnection`.
@@ -389,47 +418,36 @@ const rows = await query<User>(
 )
 ```
 
-## Connection Helpers
+## Connection and Transaction helpers
 
-The library provides promise-based wrappers around MySQL connection operations.
-
-### Get a connection
+The library exposes transaction helpers:
 
 ```ts
-import { getConnection } from "mysql2-core"
+import { beginTransaction, commit, rollback } from "mysql2-core"
+```
 
+Example:
+
+```ts
 const connection = await getConnection(pool)
 
 try {
-  // use connection
-} finally {
-  connection.release()
+  await beginTransaction(connection)
+
+  await execute(
+    connection,
+    "insert into users(name) values(?)",
+    ["John"]
+  )
+
+  await commit(connection) // release connection inside commit
+} catch (err) {
+  await rollback(connection) // release connection inside rollback
+  throw err
 }
 ```
 
-### Begin a transaction
-
-```ts
-import { beginTransaction } from "mysql2-core"
-
-await beginTransaction(connection)
-```
-
-### Commit
-
-```ts
-import { commit } from "mysql2-core"
-
-await commit(connection)
-```
-
-### Rollback
-
-```ts
-import { rollback } from "mysql2-core"
-
-await rollback(connection)
-```
+---
 
 ## Result Mapping
 
@@ -524,6 +542,8 @@ await db.execute(
 
 With `resource.string = true`, the object is serialized using `JSON.stringify()`.
 
+---
+
 ## Dynamic SQL Field Helpers
 
 ### `getFields()`
@@ -532,9 +552,15 @@ With `resource.string = true`, the object is serialized using `JSON.stringify()`
 
 ```ts
 const fields = getFields(
-  ["id", "name"],
+  ["id", "name", "invalid"],
   ["id", "name", "email"]
 )
+```
+
+The resulting fields are:
+```text
+id
+name
 ```
 
 ### `buildFields()`
@@ -543,7 +569,7 @@ const fields = getFields(
 
 ```ts
 const sqlFields = buildFields(
-  ["id", "name"],
+  ["id", "name", "invalid"],
   ["id", "name", "email"]
 )
 ```
@@ -558,6 +584,25 @@ When no valid fields are available, `buildFields()` returns:
 
 ```text
 *
+```
+
+Dynamic field names should still come from trusted or validated input because SQL parameters cannot be used for identifiers.
+
+```ts
+SELECT ${buildFields(fields, allowedFields)}
+FROM users
+```
+For example:
+```ts
+SELECT ${buildFields(["id", "name", "password", "status"], ["id", "name", "status"])}
+FROM users
+```
+
+returns:
+
+```ts
+SELECT id, name, status
+FROM users
 ```
 
 ### `getMapField()`
@@ -578,6 +623,8 @@ Result:
 ```text
 id
 ```
+
+---
 
 ## Error Handling
 
@@ -1266,40 +1313,42 @@ await executeBatchConnection(
 
 This allows the statements to participate in an existing transaction.
 
-## Transactions
-
-The library exposes transaction helpers:
-
-```ts
-import { beginTransaction, commit, rollback } from "mysql2-core"
-```
-
-Example:
-
-```ts
-const connection = await getConnection(pool)
-
-try {
-  await beginTransaction(connection)
-
-  await execute(
-    connection,
-    "insert into users(name) values(?)",
-    ["John"]
-  )
-
-  await commit(connection)
-} catch (err) {
-  await rollback(connection)
-  throw err
-} finally {
-  connection.release()
-}
-```
-
 ## Multiple Statements
+enables batch optimization by combining multiple SQL statements into a single MySQL request. This reduces the number of application-to-database round trips for batch operations. When disabled, statements are executed individually within the same transaction.
 
-The batch transaction executor can optionally combine multiple statements into a single MySQL request.
+`multipleStatements` is specifically a round-trip optimization.
+
+It enables batch optimization by combining multiple SQL statements into a single MySQL request. This reduces the number of application-to-database round trips for batch operations. When disabled, statements are executed individually within the same transaction.
+```text
+multipleStatements = false
+
+Application
+   │
+   ├── SQL 1 ──► MySQL
+   ├── SQL 2 ──► MySQL
+   ├── SQL 3 ──► MySQL
+   │
+   └── SQL 100 ─► MySQL
+
+≈ 100 database round trips
+```
+
+versus:
+
+```text
+multipleStatements = true
+
+Application
+   │
+   └── SQL 1; SQL 2; ...; SQL 100 ──► MySQL
+
+≈ 1 database round trip
+```
+
+For a batch containing many relatively small statements, that can be a meaningful performance improvement.
+
+
+Anyway, `multipleStatements` depends on the configuration in ConnectionString. So, I use `multipleStatements` as a global configuration.
 
 Enable:
 
@@ -1309,10 +1358,18 @@ import { resource } from "mysql2-core"
 resource.multipleStatements = true
 ```
 
-The statements are combined and executed through `connection.query()`.
+It gives you a simple deployment-level decision:
 
-This can reduce the number of database round trips for large batches.
-
+```text
+Connection configuration
+        │
+        ▼
+resource.multipleStatements
+        │
+        ├── false → individual execution
+        │
+        └── true  → combined batch execution
+```
 ## Serialization
 
 `toArray()` prepares parameter values before they are passed to `mysql2`.
