@@ -54,10 +54,10 @@ export function beginTransaction(connection: PoolConnection): Promise<void> {
 export function commit(connection: PoolConnection): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     connection.commit((err) => {
-      connection.release()
       if (err) {
         return reject(err)
       }
+      connection.release()
       return resolve()
     })
   })
@@ -196,11 +196,7 @@ export async function executeBatch(pool: Pool, statements: Statement[], requireF
     return execute(pool, statements[0].query, statements[0].params)
   }
   const connection = await getConnection(pool)
-  try {
-    return await executeBatchConnectionTx(connection, statements, requireFirstAffected)
-  } finally {
-    connection.release()
-  }
+  return await executeBatchConnectionTx(connection, statements, requireFirstAffected)
 }
 export async function executeBatchConnectionTx(connection: PoolConnection, statements: Statement[], requireFirstAffected?: boolean): Promise<number> {
   if (!statements || statements.length === 0) {
@@ -209,7 +205,7 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
   if (statements.length === 1) {
     return execute(connection, statements[0].query, statements[0].params)
   }
-  await beginTransaction(connection, true)
+  await beginTransaction(connection)
   try {
     let count = 0
 
@@ -220,7 +216,7 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
         count = firstCount
 
         if (firstCount === 0) {
-          await commit(connection, true)
+          await commit(connection)
           return 0
         }
         const remaining = statements.slice(1)
@@ -234,7 +230,7 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
         const firstCount = await execute(connection, statements[0].query, statements[0].params)
         count = firstCount
         if (firstCount === 0) {
-          await commit(connection, true)
+          await commit(connection)
           return 0
         }
       }
@@ -244,7 +240,7 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
       }
     }
 
-    await commit(connection, true)
+    await commit(connection)
 
     return count
   } catch (err) {
@@ -654,7 +650,7 @@ export class MySQLWriter<T> {
         return execute(this.pool, stmt.query, stmt.params)
       }
     } else {
-      return Promise.resolve(0)
+      return Promise.resolve(-1)
     }
   }
 }

@@ -59,24 +59,31 @@ export function metadata(attrs: Attributes): Metadata {
   }
   return m
 }
-export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildParam?: (i: number) => string, i?: number): Statement {
-  if (!i) {
-    i = 1
-  }
+export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildParam?: (i: number) => string): Statement {
   if (!buildParam) {
     buildParam = param
   }
   const ks = Object.keys(attrs)
-  const pks: Attribute[] = []
+  const meta = metadata(attrs)
+  const pks = meta.keys
+  let isUpdate = true
   const cols: string[] = []
   const values: string[] = []
   const args: any[] = []
   const o: any = obj
+  for (const k of pks) {
+    if (k.name) {
+      let v = o[k.name]
+      if (v == null) {
+        isUpdate = false
+      }
+    }
+  }
+  let i = 1
   for (const k of ks) {
     const attr = attrs[k]
-    attr.name = k
-    if (attr.key) {
-      pks.push(attr)
+    if (!attr) {
+      continue
     }
     let v = o[k]
     if (v == null) {
@@ -110,7 +117,7 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildPa
       }
     }
   }
-  if (pks.length === 0) {
+  if (isUpdate === false || pks.length === 0) {
     if (cols.length === 0) {
       return { query: "", params: args }
     } else {
@@ -172,7 +179,16 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
     const cols: string[] = []
     const values: string[] = []
     const args: any[] = []
+    let isUpdate = true
     const o: any = obj
+    for (const k of pks) {
+      if (k.name) {
+        let v = o[k.name]
+        if (v == null) {
+          isUpdate = false
+        }
+      }
+    }
     for (const k of ks) {
       const attr = attrs[k]
       let v = o[k]
@@ -207,7 +223,7 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
         }
       }
     }
-    if (pks.length === 0) {
+    if (isUpdate === false || pks.length === 0) {
       if (cols.length > 0) {
         const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")})`
         const smt = { query: q, params: args }
