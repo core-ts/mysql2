@@ -121,8 +121,13 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildPa
     if (cols.length === 0) {
       return { query: "", params: args }
     } else {
-      const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")})`
-      return { query: q, params: args }
+      if (pks.length === 0) {
+        const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")})`
+        return { query: q, params: args }
+      } else {
+        const q = `insert ignore into ${table}(${cols.join(",")})values(${values.join(",")})`
+        return { query: q, params: args }
+      }
     }
   } else {
     const colSet: string[] = []
@@ -156,8 +161,8 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildPa
                 args.push(v)
               }
             }
-            colSet.push(`${field}=${x}`)
           }
+          colSet.push(`${field}=${x}`)
         }
       }
     }
@@ -188,10 +193,10 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildPa
             x = buildParam(i++)
             if (typeof v === "boolean") {
               if (v === true) {
-                const v2 = attr.true ? "" + attr.true : `1`
+                const v2 = attr.true !== undefined ? "" + attr.true : `1`
                 args.push(v2)
               } else {
-                const v2 = attr.false ? "" + attr.false : `0`
+                const v2 = attr.false !== undefined ? "" + attr.false : `0`
                 args.push(v2)
               }
             } else {
@@ -278,9 +283,15 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
     }
     if (isUpdate === false || pks.length === 0) {
       if (cols.length > 0) {
-        const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")})`
-        const smt = { query: q, params: args }
-        sts.push(smt)
+        if (pks.length === 0) {
+          const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")})`
+          const smt = { query: q, params: args }
+          sts.push(smt)
+        } else {
+          const q = `insert ignore into ${table}(${cols.join(",")})values(${values.join(",")})`
+          const smt = { query: q, params: args }
+          sts.push(smt)
+        }
       }
     } else {
       const colSet: string[] = []
@@ -346,10 +357,10 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
               x = buildParam(i++)
               if (typeof v === "boolean") {
                 if (v === true) {
-                  const v2 = attr.true ? "" + attr.true : true
+                  const v2 = attr.true !== undefined ? "" + attr.true : `1`
                   args.push(v2)
                 } else {
-                  const v2 = attr.false ? "" + attr.false : false
+                  const v2 = attr.false !== undefined ? "" + attr.false : `0`
                   args.push(v2)
                 }
               } else {

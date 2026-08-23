@@ -143,10 +143,10 @@ export class PoolConnectionManager implements Transaction {
   commit(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.connection.commit((err) => {
-        this.release()
         if (err) {
           return reject(err)
         }
+        this.release()
         return resolve()
       })
     })
@@ -203,7 +203,9 @@ export async function executeBatchConnectionTx(connection: PoolConnection, state
     return 0
   }
   if (statements.length === 1) {
-    return execute(connection, statements[0].query, statements[0].params)
+    const count = await execute(connection, statements[0].query, statements[0].params)
+    connection.release()
+    return count
   }
   await beginTransaction(connection)
   try {
