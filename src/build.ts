@@ -78,12 +78,12 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, pks?: A
     }
   }
 
-  let isUpdate = true
-  let isVersion = false
   const cols: string[] = []
   const values: string[] = []
   const args: any[] = []
   const o: any = obj
+  let isUpdate = true
+  let isVersion = false
   for (const k of pks) {
     if (k.name) {
       let v = o[k.name]
