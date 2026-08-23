@@ -1,6 +1,6 @@
 import { Connection, createPool as createPool2, FieldPacket, Pool, PoolConnection, ResultSetHeader } from "mysql2"
 import { Pool as PromisePool } from "mysql2/promise"
-import { buildToSave, buildToSaveBatch, param } from "./build"
+import { buildToSave, buildToSaveBatch, metadata, param } from "./build"
 import { Attribute, Attributes, DB, Statement, StringMap, Transaction } from "./metadata"
 
 export * from "./build"
@@ -412,25 +412,6 @@ export function count(pool: Pool | PoolConnection, sql: string, args?: any[]): P
   return executeScalar<number>(pool, sql, args).then((res) => (res !== null ? res : 0))
 }
 
-export function save<T>(pool: Pool | PoolConnection | ((sql: string, args?: any[]) => Promise<number>), obj: T, table: string, attrs: Attributes, buildParam?: (i: number) => string): Promise<number> {
-  const s = buildToSave(obj, table, attrs, buildParam)
-  if (!s.query) {
-    return Promise.resolve(-1)
-  }
-  if (typeof pool === "function") {
-    return pool(s.query, s.params)
-  } else {
-    return execute(pool, s.query, s.params)
-  }
-}
-export function saveBatch<T>(pool: Pool | ((statements: Statement[]) => Promise<number>), objs: T[], table: string, attrs: Attributes, buildParam?: (i: number) => string): Promise<number> {
-  const s = buildToSaveBatch(objs, table, attrs, buildParam)
-  if (typeof pool === "function") {
-    return pool(s)
-  } else {
-    return executeBatch(pool, s)
-  }
-}
 export function toArray(arr?: any[]): any[] {
   if (!arr || arr.length === 0) {
     return []
@@ -624,6 +605,8 @@ export class StringAdapter {
 
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLWriter<T> {
+  protected keys: Attribute[]
+  protected version?: string
   protected param?: (i: number) => string
   constructor(
     protected pool: Pool | PoolConnection,
@@ -635,6 +618,9 @@ export class MySQLWriter<T> {
   ) {
     this.write = this.write.bind(this)
     this.param = buildParam ? buildParam : param
+    const m = metadata(attributes)
+    this.keys = m.keys
+    this.version = m.version
   }
   write(obj: T): Promise<number> {
     if (!obj) {
@@ -644,7 +630,7 @@ export class MySQLWriter<T> {
     if (this.map) {
       obj2 = this.map(obj)
     }
-    const stmt = buildToSave(obj2, this.table, this.attributes, this.param)
+    const stmt = buildToSave(obj2, this.table, this.attributes, this.keys, this.version, this.param)
     if (stmt.query) {
       if (this.oneIfSuccess) {
         return execute(this.pool, stmt.query, stmt.params).then((ct) => (ct > 0 ? 1 : 0))
@@ -657,8 +643,10 @@ export class MySQLWriter<T> {
   }
 }
 // tslint:disable-next-line:max-classes-per-file
-export class MySQLStreamWriter<T> {
+export class BufferedBatchWriter<T> {
   protected list: T[] = []
+  protected keys: Attribute[]
+  protected version?: string
   protected param?: (i: number) => string
   constructor(
     protected pool: Pool,
@@ -671,6 +659,9 @@ export class MySQLStreamWriter<T> {
     this.write = this.write.bind(this)
     this.flush = this.flush.bind(this)
     this.param = buildParam ? buildParam : param
+    const m = metadata(attributes)
+    this.keys = m.keys
+    this.version = m.version
   }
   write(obj: T): Promise<number> {
     if (!obj) {
@@ -693,7 +684,7 @@ export class MySQLStreamWriter<T> {
     if (!this.list || this.list.length === 0) {
       return Promise.resolve(0)
     } else {
-      const stmt = buildToSaveBatch(this.list, this.table, this.attributes, this.param)
+      const stmt = buildToSaveBatch(this.list, this.table, this.attributes, this.keys, this.version, this.param)
       if (stmt.length > 0) {
         return executeBatch(this.pool as any, stmt).then((r) => {
           this.list = []
@@ -707,7 +698,9 @@ export class MySQLStreamWriter<T> {
   }
 }
 // tslint:disable-next-line:max-classes-per-file
-export class MySQLBatchWriter<T> {
+export class BatchWriter<T> {
+  protected keys: Attribute[]
+  protected version?: string
   protected param?: (i: number) => string
   constructor(
     protected pool: Pool,
@@ -718,6 +711,9 @@ export class MySQLBatchWriter<T> {
   ) {
     this.write = this.write.bind(this)
     this.param = buildParam ? buildParam : param
+    const m = metadata(attributes)
+    this.keys = m.keys
+    this.version = m.version
   }
   write(objs: T[]): Promise<number> {
     if (!objs || objs.length === 0) {
@@ -731,7 +727,7 @@ export class MySQLBatchWriter<T> {
         list.push(obj2)
       }
     }
-    const stmts = buildToSaveBatch(list, this.table, this.attributes, this.param)
+    const stmts = buildToSaveBatch(list, this.table, this.attributes, this.keys, this.version, this.param)
     if (stmts.length > 0) {
       return executeBatch(this.pool, stmts)
     } else {
