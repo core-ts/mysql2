@@ -650,7 +650,7 @@ export class MySQLWriter<T> {
         return execute(this.pool, stmt.query, stmt.params)
       }
     } else {
-      return Promise.resolve(-1)
+      return Promise.resolve(0)
     }
   }
 }

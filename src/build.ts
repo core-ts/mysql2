@@ -63,10 +63,10 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildPa
   if (!buildParam) {
     buildParam = param
   }
-  const ks = Object.keys(attrs)
   const meta = metadata(attrs)
   const pks = meta.keys
   let isUpdate = true
+  const ks = Object.keys(attrs)
   const cols: string[] = []
   const values: string[] = []
   const args: any[] = []
@@ -126,6 +126,7 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildPa
     }
   } else {
     const colSet: string[] = []
+    let ver: string | null = null
     for (const k of ks) {
       const v = o[k]
       if (v !== undefined) {
@@ -133,9 +134,53 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildPa
         if (attr && !attr.key && !attr.ignored && !attr.noupdate) {
           const field = attr.column ? attr.column : k
           let x: string
-          if (v === null) {
-            x = "null"
-          } else if (v === "") {
+          if (attr.version) {
+            ver = k
+            x = `${field} + 1`
+          } else {
+            if (v === "") {
+              x = `''`
+            } else if (typeof v === "number") {
+              x = toString(v)
+            } else {
+              x = buildParam(i++)
+              if (typeof v === "boolean") {
+                if (v === true) {
+                  const v2 = attr.true !== undefined ? attr.true : `1`
+                  args.push(v2)
+                } else {
+                  const v2 = attr.false !== undefined ? attr.false : `0`
+                  args.push(v2)
+                }
+              } else {
+                args.push(v)
+              }
+            }
+            colSet.push(`${field}=${x}`)
+          }
+        }
+      }
+    }
+    if (cols.length > 0) {
+      if (colSet.length === 0) {
+        const q = `insert ignore into ${table}(${cols.join(",")})values(${values.join(",")})`
+        return { query: q, params: args }
+      } else {
+        const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")}) on duplicate key update ${colSet.join(",")}`
+        return { query: q, params: args }
+      }
+    } else {
+      if (colSet.length === 0) {
+        return { query: "", params: args }
+      } else {
+        const colQuery: string[] = []
+        for (const pk of pks) {
+          const na = pk.name ? pk.name : ""
+          const attr = attrs[na]
+          const field = attr.column ? attr.column : pk.name
+          const v = o[na]
+          let x: string
+          if (v === "") {
             x = `''`
           } else if (typeof v === "number") {
             x = toString(v)
@@ -143,26 +188,31 @@ export function buildToSave<T>(obj: T, table: string, attrs: Attributes, buildPa
             x = buildParam(i++)
             if (typeof v === "boolean") {
               if (v === true) {
-                const v2 = attr.true !== undefined ? attr.true : `1`
+                const v2 = attr.true ? "" + attr.true : `1`
                 args.push(v2)
               } else {
-                const v2 = attr.false !== undefined ? attr.false : `0`
+                const v2 = attr.false ? "" + attr.false : `0`
                 args.push(v2)
               }
             } else {
               args.push(v)
             }
           }
-          colSet.push(`${field}=${x}`)
+          colQuery.push(`${field}=${x}`)
         }
+        if (ver && ver.length > 0) {
+          const v = o[ver]
+          if (typeof v === "number" && !isNaN(v)) {
+            const attr = attrs[ver]
+            if (attr) {
+              const field = attr.column ? attr.column : ver
+              colQuery.push(`${field}=${v}`)
+            }
+          }
+        }
+        const q = `update ${table} set ${colSet.join(",")} where ${colQuery.join(" and ")}`
+        return { query: q, params: args }
       }
-    }
-    if (colSet.length === 0) {
-      const q = `insert ignore into ${table}(${cols.join(",")})values(${values.join(",")})`
-      return { query: q, params: args }
-    } else {
-      const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")}) on duplicate key update ${colSet.join(",")}`
-      return { query: q, params: args }
     }
   }
 }
@@ -191,6 +241,9 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
     }
     for (const k of ks) {
       const attr = attrs[k]
+      if (!attr) {
+        continue
+      }
       let v = o[k]
       if (v == null) {
         v = attr.default
@@ -231,6 +284,7 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
       }
     } else {
       const colSet: string[] = []
+      let ver: string | null = null
       for (const k of ks) {
         const v = o[k]
         if (v !== undefined) {
@@ -238,9 +292,53 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
           if (attr && !attr.key && !attr.ignored && !attr.noupdate) {
             const field = attr.column ? attr.column : k
             let x: string
-            if (v === null) {
-              x = "null"
-            } else if (v === "") {
+            if (attr.version) {
+              ver = k
+              x = `${field} + 1`
+            } else {
+              if (v === "") {
+                x = `''`
+              } else if (typeof v === "number") {
+                x = toString(v)
+              } else {
+                x = buildParam(i++)
+                if (typeof v === "boolean") {
+                  if (v === true) {
+                    const v2 = attr.true !== undefined ? attr.true : `1`
+                    args.push(v2)
+                  } else {
+                    const v2 = attr.false !== undefined ? attr.false : `0`
+                    args.push(v2)
+                  }
+                } else {
+                  args.push(v)
+                }
+              }
+            }
+            colSet.push(`${field}=${x}`)
+          }
+        }
+      }
+      if (cols.length > 0) {
+        if (colSet.length === 0) {
+          const q = `insert ignore into ${table}(${cols.join(",")})values(${values.join(",")});`
+          const smt: Statement = { query: q, params: args }
+          sts.push(smt)
+        } else {
+          const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")}) on duplicate key update ${colSet.join(",")};`
+          const smt: Statement = { query: q, params: args }
+          sts.push(smt)
+        }
+      } else {
+        const colQuery: string[] = []
+        if (colSet.length > 0) {
+          for (const pk of pks) {
+            const na = pk.name ? pk.name : ""
+            const attr = attrs[na]
+            const field = attr.column ? attr.column : pk.name
+            const v = o[na]
+            let x: string
+            if (v === "") {
               x = `''`
             } else if (typeof v === "number") {
               x = toString(v)
@@ -248,28 +346,32 @@ export function buildToSaveBatch<T>(objs: T[], table: string, attrs: Attributes,
               x = buildParam(i++)
               if (typeof v === "boolean") {
                 if (v === true) {
-                  const v2 = attr.true !== undefined ? attr.true : `1`
+                  const v2 = attr.true ? "" + attr.true : true
                   args.push(v2)
                 } else {
-                  const v2 = attr.false !== undefined ? attr.false : `0`
+                  const v2 = attr.false ? "" + attr.false : false
                   args.push(v2)
                 }
               } else {
                 args.push(v)
               }
             }
-            colSet.push(`${field}=${x}`)
+            colQuery.push(`${field}=${x}`)
           }
+          if (ver && ver.length > 0) {
+            const v = o[ver]
+            if (typeof v === "number" && !isNaN(v)) {
+              const attr = attrs[ver]
+              if (attr) {
+                const field = attr.column ? attr.column : ver
+                colQuery.push(`${field}=${v}`)
+              }
+            }
+          }
+          const q = `update ${table} set ${colSet.join(",")} where ${colQuery.join(" and ")}`
+          const smt: Statement = { query: q, params: args }
+          sts.push(smt)
         }
-      }
-      if (colSet.length === 0) {
-        const q = `insert ignore into ${table}(${cols.join(",")})values(${values.join(",")});`
-        const smt: Statement = { query: q, params: args }
-        sts.push(smt)
-      } else {
-        const q = `insert into ${table}(${cols.join(",")})values(${values.join(",")}) on duplicate key update ${colSet.join(",")};`
-        const smt: Statement = { query: q, params: args }
-        sts.push(smt)
       }
     }
   }

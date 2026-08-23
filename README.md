@@ -45,7 +45,7 @@ npm install mysql2 mysql2-core
             Pool            PoolConnection
 ```
 
-### Executor
+### DB and Transaction
 
 `Executor` defines the common database operations:
 
@@ -62,19 +62,7 @@ interface Executor {
 }
 ```
 
-### DB
-
-`DB` extends `Executor` with transaction creation:
-
-```ts
-interface DB extends Executor {
-  beginTransaction(): Promise<Transaction>
-}
-```
-
-### Transaction
-
-`Transaction` extends `Executor` with:
+A **transaction** extends the same interface:
 
 ```ts
 interface Transaction extends Executor {
@@ -82,6 +70,91 @@ interface Transaction extends Executor {
   rollback(): Promise<void>
 }
 ```
+
+A database implementation can start a transaction through:
+
+```ts
+interface DB extends Executor {
+  beginTransaction(): Promise<Transaction>
+}
+```
+
+This makes application-level persistence code independent from the concrete MySQL connection implementation.
+
+
+## SQL Parameters
+
+The default MySQL parameter builder returns:
+
+```ts
+export function param(i: number): string {
+  return "?"
+}
+```
+
+The index is provided to support custom parameter syntaxes.
+
+For example:
+
+```ts
+const buildParam = (i: number) => `$${i}`
+```
+
+This allows the SQL generation layer to be reused by implementations that require different placeholder conventions.
+
+## Metadata
+
+The persistence helpers use `Attributes` to describe database fields:
+
+```ts
+const attrs = {
+  id: {
+    key: true,
+    type: "integer",
+  },
+  name: {
+    type: "string",
+  },
+  active: {
+    type: "boolean",
+    true: 1,
+    false: 0,
+  },
+}
+```
+
+An attribute can define:
+
+```ts
+export interface Attribute {
+  name?: string
+  column?: string
+  type?: DataType
+  default?: string | number | Date | boolean
+  key?: boolean
+  noinsert?: boolean
+  noupdate?: boolean
+  version?: boolean
+  ignored?: boolean
+  true?: string | number
+  false?: string | number
+}
+```
+
+### Attribute options
+
+| Option     | Description                                                                 |
+| ---------- | --------------------------------------------------------------------------- |
+| `key`      | Marks the field as a key used to determine whether an object can be updated |
+| `column`   | Database column name when it differs from the object property               |
+| `default`  | Default value used when the object property is `null` or `undefined`        |
+| `noinsert` | Excludes the field from generated `INSERT` statements                       |
+| `noupdate` | Excludes the field from generated update expressions                        |
+| `ignored`  | Excludes the field from persistence                                         |
+| `version`  | Initializes the field to `1` when inserting                                 |
+| `true`     | Database value used when a boolean is `true`                                |
+| `false`    | Database value used when a boolean is `false`                               |
+| `type`     | Describes the data type and supports metadata consumers                     |
 
 ## Creating a Connection Pool
 
@@ -1595,10 +1668,455 @@ This architecture keeps applications lightweight, modular, and easy to maintain.
 * MySQL
 * [`mysql2`](https://www.npmjs.com/package/mysql2)
 
+## Important Notes
+
+Table names and column names are inserted into generated SQL and should therefore be treated as trusted configuration.
+
+Values are generally represented as query parameters, while SQL identifiers are generated from metadata.
+
+`buildToSave()` uses MySQL `INSERT ... ON DUPLICATE KEY UPDATE` semantics when key fields are available. The actual duplicate condition is determined by MySQL's unique indexes.
+
+The `version` attribute currently initializes a version field to `1` during insertion; it does not by itself provide optimistic-locking checks.
+
+MySQL affected-row counts should be interpreted according to MySQL semantics. In particular, an upsert that does not change an existing row can report zero affected rows.
+
 ## License
 
 MIT
 
+# mysql2-core
+
+`mysql2-core` is a lightweight TypeScript database utility library for MySQL applications built on top of [`mysql2`](https://www.npmjs.com/package/mysql2).
+
+It provides reusable abstractions for SQL execution, transactions, metadata-driven persistence, batch operations, and streaming/batch writers while keeping the underlying MySQL driver accessible.
+
+## Features
+
+* Promise-based MySQL execution helpers
+* `Executor`, `DB`, and `Transaction` abstractions
+* Transaction and connection management
+* Single-statement and batch execution
+* Optional MySQL multiple-statement execution
+* Metadata-driven insert/upsert generation
+* Configurable column mappings
+* Boolean value mapping
+* Default values
+* Ignored, insert-only, and update-only attributes
+* Version-field initialization
+* Scalar and count execution interfaces
+* Generic `save()` and `saveBatch()` helpers
+* `MySQLWriter`
+* `MySQLBatchWriter`
+* `MySQLStreamWriter`
+* Custom SQL parameter builders for different SQL dialect conventions
+* JSON serialization support for object parameters
+* Duplicate-key error normalization
+
+## Installation
+
+```bash
+npm install mysql2-core mysql2
+```
+
+## Basic Usage
+
+The library works with a `mysql2` pool or connection.
+
+```ts
+import mysql from "mysql2"
+import { execute, getConnection } from "mysql2-core"
+
+const pool = mysql.createPool({
+  host: "localhost",
+  user: "root",
+  password: "password",
+  database: "app",
+}).promise()
+
+const affected = await execute(
+  pool as any,
+  "update users set name = ? where id = ?",
+  ["John", 1],
+)
+
+console.log(affected)
+```
+
+For applications using the callback-oriented `mysql2` pool/connection types directly, the execution helpers operate on `Pool` and `PoolConnection`.
+
+## Generating Save Statements
+
+`buildToSave()` converts an object and its metadata into a SQL statement.
+
+```ts
+const attrs = {
+  id: {
+    key: true,
+    type: "integer",
+  },
+  name: {
+    type: "string",
+  },
+  active: {
+    type: "boolean",
+  },
+}
+
+const statement = buildToSave(
+  {
+    id: 10,
+    name: "John",
+    active: true,
+  },
+  "users",
+  attrs,
+)
+```
+
+When a key is available, the generated statement uses MySQL's duplicate-key upsert syntax:
+
+```sql
+insert into users(...)
+values(...)
+on duplicate key update ...
+```
+
+When the key is missing, the operation becomes a normal insert.
+
+## Saving Objects
+
+The `save()` helper combines statement generation and execution:
+
+```ts
+const affected = await save(
+  pool,
+  {
+    id: 10,
+    name: "John",
+    active: true,
+  },
+  "users",
+  attrs,
+)
+```
+
+The same helper can also receive a custom execution function:
+
+```ts
+const affected = await save(
+  async (sql, args) => {
+    return executor.execute(sql, args)
+  },
+  user,
+  "users",
+  attrs,
+)
+```
+
+This makes the SQL-building component usable with a custom database abstraction.
+
+## Batch Saving
+
+Multiple objects can be converted into statements with:
+
+```ts
+const statements = buildToSaveBatch(
+  users,
+  "users",
+  attrs,
+)
+```
+
+Or directly executed:
+
+```ts
+const affected = await saveBatch(
+  pool,
+  users,
+  "users",
+  attrs,
+)
+```
+
+Multiple statements are executed inside a transaction.
+
+## Batch Execution
+
+Use `executeBatch()` for a collection of SQL statements:
+
+```ts
+const count = await executeBatch(pool, [
+  {
+    query: "update users set active = ? where id = ?",
+    params: [true, 1],
+  },
+  {
+    query: "update users set active = ? where id = ?",
+    params: [false, 2],
+  },
+])
+```
+
+For multiple statements, the helper obtains a connection, starts a transaction, executes the statements, and commits the transaction.
+
+If an execution fails, the transaction is rolled back and the original error is re-thrown.
+
+## Multiple Statements
+
+The library can optionally combine statements into one MySQL request.
+
+```ts
+resource.multipleStatements = true
+```
+
+When enabled, statements are concatenated with semicolons and executed together.
+
+When disabled, statements are executed individually inside the same transaction.
+
+For safety, table names and column names should always come from trusted application configuration and should never be derived directly from untrusted input.
+
+## Transactions
+
+Connection and transaction helpers are available directly:
+
+```ts
+const connection = await getConnection(pool)
+
+await beginTransaction(connection)
+
+try {
+  await execute(connection, "update ...", [...])
+  await execute(connection, "insert ...", [...])
+
+  await commit(connection)
+} catch (err) {
+  await rollback(connection)
+  throw err
+}
+```
+
+The batch execution APIs already provide this transaction handling automatically.
+
+## Boolean Mapping
+
+Boolean attributes can specify the values stored in MySQL:
+
+```ts
+const attrs = {
+  active: {
+    type: "boolean",
+    true: 1,
+    false: 0,
+  },
+}
+```
+
+The generated parameters become:
+
+```text
+true  -> 1
+false -> 0
+```
+
+Custom values are supported:
+
+```ts
+const attrs = {
+  active: {
+    type: "boolean",
+    true: "Y",
+    false: "N",
+  },
+}
+```
+
+## Object Parameters
+
+`toArray()` normalizes query parameters.
+
+By default, JavaScript objects are passed to the MySQL driver as objects.
+
+The library can optionally serialize object values to JSON:
+
+```ts
+resource.string = true
+```
+
+Dates are preserved as `Date` objects.
+
+## Duplicate Errors
+
+MySQL duplicate-key errors are normalized by `buildError()`.
+
+For:
+
+```text
+ER_DUP_ENTRY
+errno = 1062
+```
+
+the error receives:
+
+```ts
+error = "duplicate"
+```
+
+This allows application code to recognize duplicate persistence failures without depending entirely on MySQL's error-code representation.
+
+## Writers
+
+### MySQLWriter
+
+`MySQLWriter<T>` provides a reusable object writer.
+
+```ts
+const writer = new MySQLWriter(
+  pool,
+  "users",
+  attrs,
+)
+
+await writer.write({
+  id: 1,
+  name: "John",
+  active: true,
+})
+```
+
+An optional mapper can transform the object before persistence:
+
+```ts
+const writer = new MySQLWriter(
+  pool,
+  "users",
+  attrs,
+  false,
+  user => ({
+    ...user,
+    name: user.name.trim(),
+  }),
+)
+```
+
+The `oneIfSuccess` option converts a positive affected-row count into `1`:
+
+```ts
+const writer = new MySQLWriter(
+  pool,
+  "users",
+  attrs,
+  true,
+)
+```
+
+## MySQLBatchWriter
+
+`MySQLBatchWriter<T>` accepts a collection of objects and writes them as one transactional batch.
+
+```ts
+const writer = new MySQLBatchWriter(
+  pool,
+  "users",
+  attrs,
+)
+
+await writer.write(users)
+```
+
+A mapper can also be supplied:
+
+```ts
+const writer = new MySQLBatchWriter(
+  pool,
+  "users",
+  attrs,
+  user => ({
+    ...user,
+    name: user.name.trim(),
+  }),
+)
+```
+
+## MySQLStreamWriter
+
+`MySQLStreamWriter<T>` accumulates objects until a configurable batch size is reached.
+
+```ts
+const writer = new MySQLStreamWriter(
+  pool,
+  "users",
+  attrs,
+  1000,
+)
+
+for (const user of users) {
+  await writer.write(user)
+}
+
+await writer.flush()
+```
+
+This is useful when processing large collections without building one large SQL request.
+
+The final `flush()` should be called after the input stream has ended so that the remaining objects are persisted.
+
+## Number Conversion
+
+`toString()` converts valid JavaScript numbers into SQL-safe numeric literals:
+
+```ts
+toString(123)
+// "123"
+
+toString(NaN)
+// "null"
+
+toString(Infinity)
+// "null"
+```
+
+Non-finite numbers are represented as SQL `null`.
+
+## Design
+
+`mysql2-core` intentionally keeps the persistence model small.
+
+The library does not attempt to become a full ORM. Instead, it provides a thin layer around:
+
+```text
+mysql2
+   │
+   ├── connection / pool
+   ├── query execution
+   └── transactions
+          │
+          ▼
+     mysql2-core
+          │
+          ├── Executor
+          ├── Metadata
+          ├── SQL builders
+          ├── save helpers
+          └── writers
+```
+
+The application remains responsible for defining its entities, metadata, business rules, and queries.
+
+## Important Notes
+
+Table names and column names are inserted into generated SQL and should therefore be treated as trusted configuration.
+
+Values are generally represented as query parameters, while SQL identifiers are generated from metadata.
+
+`buildToSave()` uses MySQL `INSERT ... ON DUPLICATE KEY UPDATE` semantics when key fields are available. The actual duplicate condition is determined by MySQL's unique indexes.
+
+The `version` attribute currently initializes a version field to `1` during insertion; it does not by itself provide optimistic-locking checks.
+
+MySQL affected-row counts should be interpreted according to MySQL semantics. In particular, an upsert that does not change an existing row can report zero affected rows.
+
+## License
+
+MIT2
 
 
 # mysql2-core
