@@ -194,9 +194,22 @@ const pool = createPool({
 
 const db = new PoolManager(pool)
 
-const users = await db.query(
-  "SELECT id, name FROM users WHERE active = ?",
-  [1]
+interface User {
+  id: number
+  name: string
+  status: string
+}
+
+const users = await db.query<User>(
+  "select id, name from users where status = ?",
+  ["ACTIVE"]
+)
+
+const affectedRows = await db.execute(
+  {
+    query: "update users set status = ? where id = ?",
+    params: ["ACTIVE", 100]
+  }
 )
 ```
 
