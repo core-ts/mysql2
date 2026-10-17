@@ -602,6 +602,8 @@ export class StringAdapter {
     return execute(this.pool, s, values)
   }
 }
+export const StringRepository = StringAdapter
+export const StringService = StringAdapter
 
 // tslint:disable-next-line:max-classes-per-file
 export class MySQLWriter<T> {
